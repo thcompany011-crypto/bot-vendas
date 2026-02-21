@@ -9,13 +9,14 @@ const pino = require('pino');
 const axios = require('axios');
 require('dotenv').config();
 
-// Configurações Fixas do Sr. Alex
+// Configurações do Sr. Alex
 const MEU_NUMERO = "5562994593862"; 
 const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
-const PRODUCT_ID = "pro8x3ol";
+const PRODUCT_ID = "pro8x3ol"; // ⚠️ Verifique se este ID corresponde ao kit de 5 unidades na Coinzz
+const GATILHO_ANUNCIO = "oi vim pela vista o anúncio da aurora pink";
 const userState = {};
 
-async function iniciarSarah() {
+async function iniciarAlex() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -23,30 +24,22 @@ async function iniciarSarah() {
         auth: state,
         version,
         logger: pino({ level: 'silent' }),
-        browser: ['Ubuntu', 'Chrome', '20.0.04'], // Identidade estável
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
         printQRInTerminal: false,
-        connectTimeoutMs: 120000, // 2 minutos para não cair
-        keepAliveIntervalMs: 30000, // Mantém o sinal ativo
-        defaultQueryTimeoutMs: 0
+        connectTimeoutMs: 120000,
+        keepAliveIntervalMs: 30000
     });
 
-    // SISTEMA DE PAREAMENTO POR NÚMERO
+    // SISTEMA DE CONEXÃO
     if (!sock.authState.creds.registered) {
         console.clear();
-        console.log("🌸 --- SISTEMA AURORA PINK: CONEXÃO --- 🌸");
-        console.log("⏳ Estabilizando conexão com o WhatsApp...");
-        
-        await delay(10000); // 10 segundos para garantir que o socket está pronto
-
+        console.log("🌸 --- SISTEMA AURORA PINK: ALEX --- 🌸");
+        await delay(10000);
         try {
             const code = await sock.requestPairingCode(MEU_NUMERO);
-            console.log("\n==========================================");
-            console.log(`✅ SEU CÓDIGO DE ACESSO: ${code}`);
-            console.log("==========================================\n");
-            console.log("👉 Digite esse código no seu WhatsApp agora!");
-            console.log("O Termux vai aguardar até você conectar...");
+            console.log(`\n✅ SEU CÓDIGO DE ACESSO: ${code}\n`);
         } catch (err) {
-            console.log("❌ Erro. Aguarde 1 minuto e tente de novo.");
+            console.log("❌ Erro ao gerar código.");
         }
     }
 
@@ -54,69 +47,88 @@ async function iniciarSarah() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
-        if (connection === 'open') {
-            console.log('\n🚀 SUCESSO! A SARAH ESTÁ ONLINE E VENDENDO.');
-        }
+        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - OFERTA R$ 297 ATIVA!');
         if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) {
-                console.log('⚠️ Conexão oscilou. Tentando manter ativa...');
-                setTimeout(() => iniciarSarah(), 5000);
-            }
+            if (reason !== DisconnectReason.loggedOut) iniciarAlex();
         }
     });
 
-    // FLUXO DE VENDAS (SARAH)
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
         const from = msg.key.remoteJid;
-        const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+        const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        // ETAPA 1 - CONEXÃO
+        // 1. FILTRO DE GATILHO (SÓ RESPONDE AO ANÚNCIO)
         if (!userState[from]) {
-            await sock.sendMessage(from, { audio: { url: "./audios/aurora-conexao.mp3" }, mimetype: 'audio/mp4', ptt: true });
+            if (texto !== GATILHO_ANUNCIO.toLowerCase()) return;
+
+            console.log(`🚀 NOVO LEAD IDENTIFICADO: ${from}`);
+            
+            try {
+                await sock.sendMessage(from, { audio: { url: "./audios/aurora-conexao.mp3" }, mimetype: 'audio/mp4', ptt: true });
+            } catch (e) { console.log("Erro áudio conexao"); }
+            
             await delay(2000);
-            await sock.sendMessage(from, { text: "Caso se sinta à vontade, pode mandar uma foto da área, assim te ajudo melhor! 🌸" });
+            await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?* (Pode mandar foto se preferir 📸)" });
             userState[from] = { step: 1 };
             return;
         }
 
-        // ETAPA 2 - SOLUÇÃO (R$ 129,00)
+        // 2. SOLUÇÃO E APRESENTAÇÃO
         if (userState[from].step === 1) {
-            await sock.sendMessage(from, { audio: { url: "./audios/aurora-solucao.mp3" }, mimetype: 'audio/mp4', ptt: true });
+            try {
+                await sock.sendMessage(from, { audio: { url: "./audios/aurora-solucao.mp3" }, mimetype: 'audio/mp4', ptt: true });
+                await delay(3000);
+                await sock.sendMessage(from, { audio: { url: "./audios/aurora-apresentacao.mp3" }, mimetype: 'audio/mp4', ptt: true });
+            } catch (e) { console.log("Erro áudios solução"); }
+            
             await delay(2000);
-            await sock.sendMessage(from, { text: "O tratamento para manchas e foliculite sai por apenas R$ 129,00. E o melhor: você só paga quando o produto chegar na sua casa! 🚛" });
-            await sock.sendMessage(from, { text: "📍 Qual seu CEP e endereço para eu ver o prazo?" });
+            await sock.sendMessage(from, { text: "O Aurora Pink resolve isso rápido! Além da garantia de 30 dias, temos um cuidado especial com o envio para sua região. ✨" });
             userState[from].step = 2;
             return;
         }
 
-        // ETAPA 3 - FECHAMENTO COINZZ
+        // 3. OFERTA DAS 5 UNIDADES (R$ 297,00)
         if (userState[from].step === 2) {
-            userState[from].dados = texto;
-            await sock.sendMessage(from, { text: "Perfeito! Me confirme seu Nome e CPF para gerar sua nota e garantia de satisfação?" });
+            try {
+                await sock.sendMessage(from, { audio: { url: "./audios/aurora-condicao.mp3" }, mimetype: 'audio/mp4', ptt: true });
+            } catch (e) { console.log("Erro áudio condição"); }
+            
+            await delay(2000);
+            await sock.sendMessage(from, { text: "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema o prazo e as melhores formas de envio para você agora!" });
+            userState[from].step = 3;
+            return;
+        }
+
+        // 4. COLETA DE DADOS FINAIS
+        if (userState[from].step === 3) {
+            userState[from].endereco = texto;
+            await sock.sendMessage(from, { text: "Perfeito! Já estou consultando aqui e reservando seu kit." });
+            await sock.sendMessage(from, { text: "Para finalizar o registro e gerar sua garantia, me confirme seu *Nome Completo* e *CPF*? 👇" });
             userState[from].step = 'finalizar';
             return;
         }
 
+        // 5. REGISTRO NA COINZZ
         if (userState[from].step === 'finalizar') {
             try {
                 await axios.post('https://api.coinzz.com.br/v1/orders', {
                     api_key: API_KEY_COINZZ,
                     product_id: PRODUCT_ID,
                     customer_phone: from.split('@')[0],
-                    customer_details: texto + " | " + userState[from].dados,
-                    payment_method: 'delivery'
+                    customer_details: texto + " | Combo 5 Unids | " + userState[from].endereco,
+                    payment_method: 'delivery' // O sistema tentará registrar como entrega
                 });
-                await sock.sendMessage(from, { text: "✅ Pedido Confirmado! Em breve o entregador entrará em contato. Obrigado pela confiança! ✨" });
+                await sock.sendMessage(from, { text: "✅ Pedido Confirmado! Em breve você receberá as atualizações do envio. Valeu pela confiança! 👊" });
                 delete userState[from];
             } catch (e) {
-                await sock.sendMessage(from, { text: "Recebi seus dados! Nossa equipe vai te chamar para confirmar o envio. 🌸" });
+                await sock.sendMessage(from, { text: "Dados recebidos! Minha equipe vai te chamar em instantes para confirmar os detalhes do envio do seu kit. 🌸" });
             }
         }
     });
 }
 
-iniciarSarah();
+iniciarAlex();
