@@ -7,9 +7,9 @@ async function conectarWhatsApp() {
     
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true, // Força o QR Code a aparecer no terminal
-        logger: pino({ level: 'silent' }), // Esconde as linhas de código amarelas/brancas
-        browser: ['Aurora Bot', 'Chrome', '1.0.0']
+        printQRInTerminal: true, // Mostra o QR Code no terminal
+        logger: pino({ level: 'silent' }), // Remove as mensagens amarelas chatas
+        browser: ['Chrome (Linux)', 'Chrome', '1.0.0'] // Identificação mais segura
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -18,21 +18,21 @@ async function conectarWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('✅ TUDO PRONTO! ESCANEIE O QR CODE ABAIXO:');
+            console.log('✅ SR. ALEX, ESCANEIE O QR CODE ABAIXO:');
         }
 
         if (connection === 'open') {
-            console.log('🚀 AURORA PINK CONECTADA COM SUCESSO!');
+            console.log('🚀 AURORA PINK CONECTADO COM SUCESSO!');
         }
 
         if (connection === 'close') {
             const reason = lastDisconnect?.error?.output?.statusCode;
+            // Se não foi logoff manual, tenta reconectar após 10 segundos
             if (reason !== DisconnectReason.loggedOut) {
-                console.log('⚠️ Tentando reconectar...');
-                setTimeout(() => conectarWhatsApp(), 5000);
+                console.log('⚠️ Conexão falhou. Tentando novamente em 10s...');
+                setTimeout(() => conectarWhatsApp(), 10000);
             }
         }
     });
 }
 conectarWhatsApp();
-
