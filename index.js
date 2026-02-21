@@ -33,7 +33,7 @@ async function iniciarAlex() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
-        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - ÁUDIOS .OGG ATIVOS E TESTADOS!');
+        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - MONITORANDO AUDIOS...');
         if (connection === 'close') iniciarAlex();
     });
 
@@ -44,18 +44,28 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
+        // FUNÇÃO DE ENVIO REFORÇADA
         async function enviarAudioHumano(jid, nomeArquivo, tempoGravando) {
-            const caminho = path.resolve(__dirname, 'audios', nomeArquivo);
+            const caminho = `./audios/${nomeArquivo}`;
+            console.log(`🔍 Tentando enviar: ${caminho}`);
+
             if (fs.existsSync(caminho)) {
-                await sock.sendPresenceUpdate('recording', jid);
-                await delay(tempoGravando);
-                await sock.sendMessage(jid, { 
-                    audio: fs.readFileSync(caminho), 
-                    mimetype: 'audio/ogg; codecs=opus', 
-                    ptt: true 
-                });
+                try {
+                    await sock.sendPresenceUpdate('recording', jid);
+                    await delay(tempoGravando);
+                    
+                    await sock.sendMessage(jid, { 
+                        audio: { url: caminho }, // Envio direto por URL/Caminho
+                        mimetype: 'audio/mp4',   // Mimetype "Coringa" para PTT
+                        ptt: true 
+                    });
+                    
+                    console.log(`✅ Áudio ${nomeArquivo} enviado com sucesso!`);
+                } catch (error) {
+                    console.log(`❌ ERRO AO ENVIAR ${nomeArquivo}:`, error);
+                }
             } else {
-                console.log(`⚠️ Arquivo não encontrado: ${nomeArquivo}`);
+                console.log(`⚠️ ALERTA: O arquivo ${nomeArquivo} NÃO FOI ENCONTRADO na pasta audios!`);
             }
         }
 
@@ -65,18 +75,16 @@ async function iniciarAlex() {
             await sock.sendMessage(jid, { text: mensagem });
         }
 
-        // 1. GATILHO DO ANÚNCIO
+        // --- FLUXO DE ATENDIMENTO ---
         if (!userState[from]) {
             if (texto !== GATILHO_ANUNCIO) return;
-
-            console.log(`🚀 LEAD IDENTIFICADO: ${from}`);
+            console.log(`🚀 NOVO LEAD: ${from}`);
             await enviarAudioHumano(from, 'aurora-conexao.ogg', 4000);
             await enviarTextoHumano(from, "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?* (Pode mandar foto se preferir 📸)", 2000);
             userState[from] = { step: 1 };
             return;
         }
 
-        // 2. SOLUÇÃO E CONFIANÇA
         if (userState[from].step === 1) {
             await enviarAudioHumano(from, 'aurora-solucao.ogg', 5000);
             await delay(1500);
@@ -86,7 +94,6 @@ async function iniciarAlex() {
             return;
         }
 
-        // 3. OFERTA 5 UNIDADES (R$ 297)
         if (userState[from].step === 2) {
             await enviarAudioHumano(from, 'aurora-condicao.ogg', 6000);
             await enviarTextoHumano(from, "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema agora!", 3000);
@@ -94,7 +101,6 @@ async function iniciarAlex() {
             return;
         }
 
-        // 4. COLETA DE ENDEREÇO E CPF
         if (userState[from].step === 3) {
             userState[from].endereco = texto;
             await enviarTextoHumano(from, "Perfeito! Já estou consultando aqui e reservando o seu kit no sistema.", 2000);
@@ -103,7 +109,6 @@ async function iniciarAlex() {
             return;
         }
 
-        // 5. REGISTRO NA COINZZ
         if (userState[from].step === 'finalizar') {
             try {
                 await axios.post('https://api.coinzz.com.br/v1/orders', {
@@ -123,3 +128,4 @@ async function iniciarAlex() {
 }
 
 iniciarAlex();
+
