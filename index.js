@@ -8,7 +8,7 @@ const {
 const pino = require('pino');
 const axios = require('axios');
 const fs = require('fs');
-const path = require('path'); // Para garantir o caminho correto do ficheiro
+const path = require('path');
 require('dotenv').config();
 
 const MEU_NUMERO = "5562994593862"; 
@@ -33,7 +33,7 @@ async function iniciarAlex() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
-        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - ÁUDIOS CORRIGIDOS!');
+        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - FORMATO .M4A ATIVO!');
         if (connection === 'close') iniciarAlex();
     });
 
@@ -44,7 +44,7 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        // FUNÇÃO PARA ENVIAR ÁUDIO SEGURO
+        // FUNÇÃO DE ENVIO PARA .M4A
         async function enviarAudio(jid, nomeArquivo, tempoGravando) {
             const caminho = path.resolve(__dirname, 'audios', nomeArquivo);
             if (fs.existsSync(caminho)) {
@@ -52,36 +52,32 @@ async function iniciarAlex() {
                 await delay(tempoGravando);
                 await sock.sendMessage(jid, { 
                     audio: fs.readFileSync(caminho), 
-                    mimetype: 'audio/mp4', // Engana o WhatsApp para aceitar como nota de voz
+                    mimetype: 'audio/mp4', // Formato nativo do .m4a
                     ptt: true 
                 });
             } else {
-                console.log(`⚠️ Ficheiro não encontrado: ${nomeArquivo}`);
+                console.log(`⚠️ Arquivo não encontrado: ${nomeArquivo}`);
             }
         }
 
         // ETAPA 1: CONEXÃO
         if (!userState[from]) {
             if (texto !== GATILHO_ANUNCIO) return;
-
             console.log(`🚀 LEAD IDENTIFICADO: ${from}`);
             
-            await enviarAudio(from, 'aurora-conexao.mp3', 4000);
-            
+            await enviarAudio(from, 'aurora-conexao.m4a', 4000);
             await sock.sendPresenceUpdate('composing', from);
             await delay(2000);
             await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?* (Pode mandar foto se preferir 📸)" });
-            
             userState[from] = { step: 1 };
             return;
         }
 
         // ETAPA 2: SOLUÇÃO
         if (userState[from].step === 1) {
-            await enviarAudio(from, 'aurora-solucao.mp3', 5000);
+            await enviarAudio(from, 'aurora-solucao.m4a', 5000);
             await delay(1500);
-            await enviarAudio(from, 'aurora-apresentacao.mp3', 4000);
-            
+            await enviarAudio(from, 'aurora-apresentacao.m4a', 4000);
             await sock.sendPresenceUpdate('composing', from);
             await delay(2000);
             await sock.sendMessage(from, { text: "O Aurora Pink resolve isso rápido! Além da garantia de 30 dias, temos um cuidado especial com o envio para sua região. ✨" });
@@ -91,8 +87,7 @@ async function iniciarAlex() {
 
         // ETAPA 3: OFERTA (R$ 297)
         if (userState[from].step === 2) {
-            await enviarAudio(from, 'aurora-condicao.mp3', 6000);
-            
+            await enviarAudio(from, 'aurora-condicao.m4a', 6000);
             await sock.sendPresenceUpdate('composing', from);
             await delay(3000);
             await sock.sendMessage(from, { text: "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema agora!" });
@@ -100,11 +95,9 @@ async function iniciarAlex() {
             return;
         }
 
-        // ETAPA 4: DADOS E FINALIZAÇÃO (IGUAL AO ANTERIOR)
+        // ETAPA 4 E 5 (COLETA E COINZZ)
         if (userState[from].step === 3) {
             userState[from].endereco = texto;
-            await sock.sendPresenceUpdate('composing', from);
-            await delay(2000);
             await sock.sendMessage(from, { text: "Perfeito! Já estou consultando aqui e reservando o seu kit no sistema." });
             await delay(1500);
             await sock.sendMessage(from, { text: "Para finalizar o registro e gerar sua garantia, me confirme seu *Nome Completo* e *CPF*? 👇" });
@@ -124,10 +117,11 @@ async function iniciarAlex() {
                 await sock.sendMessage(from, { text: "✅ Pedido Confirmado! Em breve receberá as atualizações do envio. Valeu pela confiança! 👊" });
                 delete userState[from];
             } catch (e) {
-                await sock.sendMessage(from, { text: "Dados recebidos! Minha equipe entrará em contato em instantes para confirmar seu kit. 🌸" });
+                await sock.sendMessage(from, { text: "Dados recebidos! Minha equipe entrará em contato para confirmar seu kit. 🌸" });
             }
         }
     });
 }
 
 iniciarAlex();
+
