@@ -11,10 +11,9 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Configurações do Sr. Alex
 const MEU_NUMERO = "5562994593862"; 
 const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
-const PRODUCT_ID = "pro8x3ol"; // ⚠️ Verifique se este ID é o das 5 unidades na Coinzz
+const PRODUCT_ID = "pro8x3ol"; 
 const GATILHO_ANUNCIO = "oi vim pela vista o anúncio da aurora pink";
 const userState = {};
 
@@ -33,14 +32,9 @@ async function iniciarAlex() {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'open') {
-            console.log('\n🚀 O ALEX ESTÁ ONLINE - PRONTO PARA VENDER COMBO R$ 297!');
-        }
-        if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) iniciarAlex();
-        }
+        const { connection } = update;
+        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - ÁUDIOS .OGG ATIVOS!');
+        if (connection === 'close') iniciarAlex();
     });
 
     sock.ev.on('messages.upsert', async m => {
@@ -50,7 +44,6 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        // FUNÇÃO DE ENVIO HUMANO (ÁUDIO)
         async function enviarAudioHumano(jid, nomeArquivo, tempoGravando) {
             const caminho = path.resolve(__dirname, 'audios', nomeArquivo);
             if (fs.existsSync(caminho)) {
@@ -66,47 +59,41 @@ async function iniciarAlex() {
             }
         }
 
-        // FUNÇÃO DE ENVIO HUMANO (TEXTO)
         async function enviarTextoHumano(jid, mensagem, tempoDigitando) {
             await sock.sendPresenceUpdate('composing', jid);
             await delay(tempoDigitando);
             await sock.sendMessage(jid, { text: mensagem });
         }
 
-        // 1. FILTRO DE GATILHO
+        // 1. GATILHO
         if (!userState[from]) {
             if (texto !== GATILHO_ANUNCIO) return;
-
-            console.log(`🚀 NOVO LEAD IDENTIFICADO: ${from}`);
-            
+            console.log(`🚀 LEAD IDENTIFICADO: ${from}`);
             await enviarAudioHumano(from, 'aurora-conexao.ogg', 4000);
             await enviarTextoHumano(from, "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?* (Pode mandar foto se preferir 📸)", 2000);
-            
             userState[from] = { step: 1 };
             return;
         }
 
-        // 2. SOLUÇÃO E APRESENTAÇÃO
+        // 2. SOLUÇÃO
         if (userState[from].step === 1) {
             await enviarAudioHumano(from, 'aurora-solucao.ogg', 5000);
             await delay(1500);
             await enviarAudioHumano(from, 'aurora-apresentacao.ogg', 4000);
-            
             await enviarTextoHumano(from, "O Aurora Pink resolve isso rápido! Além da garantia de 30 dias, temos um cuidado especial com o envio para sua região. ✨", 2000);
             userState[from].step = 2;
             return;
         }
 
-        // 3. OFERTA DAS 5 UNIDADES (R$ 297,00)
+        // 3. OFERTA (R$ 297)
         if (userState[from].step === 2) {
             await enviarAudioHumano(from, 'aurora-condicao.ogg', 6000);
-            
             await enviarTextoHumano(from, "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema o prazo e as melhores formas de envio para você agora!", 3000);
             userState[from].step = 3;
             return;
         }
 
-        // 4. COLETA DE DADOS FINAIS
+        // 4. DADOS
         if (userState[from].step === 3) {
             userState[from].endereco = texto;
             await enviarTextoHumano(from, "Perfeito! Já estou consultando aqui e reservando o seu kit no sistema.", 2000);
@@ -115,7 +102,7 @@ async function iniciarAlex() {
             return;
         }
 
-        // 5. REGISTRO NA COINZZ
+        // 5. COINZZ
         if (userState[from].step === 'finalizar') {
             try {
                 await axios.post('https://api.coinzz.com.br/v1/orders', {
@@ -125,14 +112,13 @@ async function iniciarAlex() {
                     customer_details: texto + " | Combo 5 Unids | " + userState[from].endereco,
                     payment_method: 'delivery'
                 });
-                await enviarTextoHumano(from, "✅ Pedido Confirmado! Em breve receberá as atualizações do envio no seu e-mail ou WhatsApp. Valeu pela confiança! 👊", 3000);
+                await enviarTextoHumano(from, "✅ Pedido Confirmado! Em breve receberá as atualizações do envio. Valeu pela confiança! 👊", 3000);
                 delete userState[from];
             } catch (e) {
-                await enviarTextoHumano(from, "Dados recebidos! Minha equipe entrará em contacto em instantes para confirmar os detalhes do envio do seu kit. 🌸", 2000);
+                await enviarTextoHumano(from, "Dados recebidos! Minha equipe entrará em contato em instantes para confirmar seu kit. 🌸", 2000);
             }
         }
     });
 }
 
 iniciarAlex();
-
