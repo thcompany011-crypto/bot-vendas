@@ -8,6 +8,7 @@ const {
 const pino = require('pino');
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path'); // Para garantir o caminho correto do ficheiro
 require('dotenv').config();
 
 const MEU_NUMERO = "5562994593862"; 
@@ -32,7 +33,7 @@ async function iniciarAlex() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
-        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE E PARECENDO HUMANO!');
+        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - ÁUDIOS CORRIGIDOS!');
         if (connection === 'close') iniciarAlex();
     });
 
@@ -43,25 +44,30 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
+        // FUNÇÃO PARA ENVIAR ÁUDIO SEGURO
+        async function enviarAudio(jid, nomeArquivo, tempoGravando) {
+            const caminho = path.resolve(__dirname, 'audios', nomeArquivo);
+            if (fs.existsSync(caminho)) {
+                await sock.sendPresenceUpdate('recording', jid);
+                await delay(tempoGravando);
+                await sock.sendMessage(jid, { 
+                    audio: fs.readFileSync(caminho), 
+                    mimetype: 'audio/mp4', // Engana o WhatsApp para aceitar como nota de voz
+                    ptt: true 
+                });
+            } else {
+                console.log(`⚠️ Ficheiro não encontrado: ${nomeArquivo}`);
+            }
+        }
+
         // ETAPA 1: CONEXÃO
         if (!userState[from]) {
             if (texto !== GATILHO_ANUNCIO) return;
 
             console.log(`🚀 LEAD IDENTIFICADO: ${from}`);
             
-            // Simula gravando áudio por 4 segundos
-            await sock.sendPresenceUpdate('recording', from);
-            await delay(4000);
+            await enviarAudio(from, 'aurora-conexao.mp3', 4000);
             
-            try {
-                await sock.sendMessage(from, { 
-                    audio: fs.readFileSync("./audios/aurora-conexao.mp3"), 
-                    mimetype: 'audio/mpeg', 
-                    ptt: true 
-                });
-            } catch (e) { console.log("Erro áudio"); }
-            
-            // Simula digitando por 2 segundos
             await sock.sendPresenceUpdate('composing', from);
             await delay(2000);
             await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?* (Pode mandar foto se preferir 📸)" });
@@ -72,28 +78,9 @@ async function iniciarAlex() {
 
         // ETAPA 2: SOLUÇÃO
         if (userState[from].step === 1) {
-            // Primeiro áudio
-            await sock.sendPresenceUpdate('recording', from);
-            await delay(5000);
-            try {
-                await sock.sendMessage(from, { 
-                    audio: fs.readFileSync("./audios/aurora-solucao.mp3"), 
-                    mimetype: 'audio/mpeg', 
-                    ptt: true 
-                });
-            } catch (e) { console.log("Erro áudio"); }
-
-            // Segundo áudio
+            await enviarAudio(from, 'aurora-solucao.mp3', 5000);
             await delay(1500);
-            await sock.sendPresenceUpdate('recording', from);
-            await delay(4000);
-            try {
-                await sock.sendMessage(from, { 
-                    audio: fs.readFileSync("./audios/aurora-apresentacao.mp3"), 
-                    mimetype: 'audio/mpeg', 
-                    ptt: true 
-                });
-            } catch (e) { console.log("Erro áudio"); }
+            await enviarAudio(from, 'aurora-apresentacao.mp3', 4000);
             
             await sock.sendPresenceUpdate('composing', from);
             await delay(2000);
@@ -104,41 +91,28 @@ async function iniciarAlex() {
 
         // ETAPA 3: OFERTA (R$ 297)
         if (userState[from].step === 2) {
-            await sock.sendPresenceUpdate('recording', from);
-            await delay(6000); // Áudio da oferta é mais longo
-            try {
-                await sock.sendMessage(from, { 
-                    audio: fs.readFileSync("./audios/aurora-condicao.mp3"), 
-                    mimetype: 'audio/mpeg', 
-                    ptt: true 
-                });
-            } catch (e) { console.log("Erro áudio"); }
+            await enviarAudio(from, 'aurora-condicao.mp3', 6000);
             
             await sock.sendPresenceUpdate('composing', from);
             await delay(3000);
-            await sock.sendMessage(from, { text: "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui o sistema agora!" });
+            await sock.sendMessage(from, { text: "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema agora!" });
             userState[from].step = 3;
             return;
         }
 
-        // ETAPA 4: DADOS
+        // ETAPA 4: DADOS E FINALIZAÇÃO (IGUAL AO ANTERIOR)
         if (userState[from].step === 3) {
             userState[from].endereco = texto;
             await sock.sendPresenceUpdate('composing', from);
             await delay(2000);
             await sock.sendMessage(from, { text: "Perfeito! Já estou consultando aqui e reservando o seu kit no sistema." });
             await delay(1500);
-            await sock.sendPresenceUpdate('composing', from);
-            await delay(2000);
             await sock.sendMessage(from, { text: "Para finalizar o registro e gerar sua garantia, me confirme seu *Nome Completo* e *CPF*? 👇" });
             userState[from].step = 'finalizar';
             return;
         }
 
-        // ETAPA 5: FINALIZAÇÃO
         if (userState[from].step === 'finalizar') {
-            await sock.sendPresenceUpdate('composing', from);
-            await delay(3000);
             try {
                 await axios.post('https://api.coinzz.com.br/v1/orders', {
                     api_key: API_KEY_COINZZ,
@@ -157,4 +131,3 @@ async function iniciarAlex() {
 }
 
 iniciarAlex();
-
