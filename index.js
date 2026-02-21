@@ -33,7 +33,7 @@ async function iniciarAlex() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
-        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - ÁUDIOS .OGG ATIVOS!');
+        if (connection === 'open') console.log('\n🚀 O ALEX ESTÁ ONLINE - ÁUDIOS .OGG ATIVOS E TESTADOS!');
         if (connection === 'close') iniciarAlex();
     });
 
@@ -55,7 +55,7 @@ async function iniciarAlex() {
                     ptt: true 
                 });
             } else {
-                console.log(`⚠️ Ficheiro não encontrado: ${nomeArquivo}`);
+                console.log(`⚠️ Arquivo não encontrado: ${nomeArquivo}`);
             }
         }
 
@@ -65,9 +65,10 @@ async function iniciarAlex() {
             await sock.sendMessage(jid, { text: mensagem });
         }
 
-        // 1. GATILHO
+        // 1. GATILHO DO ANÚNCIO
         if (!userState[from]) {
             if (texto !== GATILHO_ANUNCIO) return;
+
             console.log(`🚀 LEAD IDENTIFICADO: ${from}`);
             await enviarAudioHumano(from, 'aurora-conexao.ogg', 4000);
             await enviarTextoHumano(from, "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?* (Pode mandar foto se preferir 📸)", 2000);
@@ -75,7 +76,7 @@ async function iniciarAlex() {
             return;
         }
 
-        // 2. SOLUÇÃO
+        // 2. SOLUÇÃO E CONFIANÇA
         if (userState[from].step === 1) {
             await enviarAudioHumano(from, 'aurora-solucao.ogg', 5000);
             await delay(1500);
@@ -85,15 +86,15 @@ async function iniciarAlex() {
             return;
         }
 
-        // 3. OFERTA (R$ 297)
+        // 3. OFERTA 5 UNIDADES (R$ 297)
         if (userState[from].step === 2) {
             await enviarAudioHumano(from, 'aurora-condicao.ogg', 6000);
-            await enviarTextoHumano(from, "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema o prazo e as melhores formas de envio para você agora!", 3000);
+            await enviarTextoHumano(from, "*OFERTA ESPECIAL DO DIA:*\n\n🔥 Combo 5 Unidades: *R$ 297,00*\n✨ (Tratamento completo com desconto máximo)\n\n📍 Me passa seu *CEP e endereço completo*? Vou consultar aqui no sistema agora!", 3000);
             userState[from].step = 3;
             return;
         }
 
-        // 4. DADOS
+        // 4. COLETA DE ENDEREÇO E CPF
         if (userState[from].step === 3) {
             userState[from].endereco = texto;
             await enviarTextoHumano(from, "Perfeito! Já estou consultando aqui e reservando o seu kit no sistema.", 2000);
@@ -102,7 +103,7 @@ async function iniciarAlex() {
             return;
         }
 
-        // 5. COINZZ
+        // 5. REGISTRO NA COINZZ
         if (userState[from].step === 'finalizar') {
             try {
                 await axios.post('https://api.coinzz.com.br/v1/orders', {
@@ -112,10 +113,10 @@ async function iniciarAlex() {
                     customer_details: texto + " | Combo 5 Unids | " + userState[from].endereco,
                     payment_method: 'delivery'
                 });
-                await enviarTextoHumano(from, "✅ Pedido Confirmado! Em breve receberá as atualizações do envio. Valeu pela confiança! 👊", 3000);
+                await enviarTextoHumano(from, "✅ Pedido Confirmado! Em breve você receberá as atualizações do envio. Valeu pela confiança! 👊", 3000);
                 delete userState[from];
             } catch (e) {
-                await enviarTextoHumano(from, "Dados recebidos! Minha equipe entrará em contato em instantes para confirmar seu kit. 🌸", 2000);
+                await enviarTextoHumano(from, "Dados recebidos! Minha equipe entrará em contato em instantes para confirmar os detalhes do envio do seu kit. 🌸", 2000);
             }
         }
     });
