@@ -33,7 +33,7 @@ async function iniciarAlex() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
-        if (connection === 'open') console.log('\n🚀 ALEX ONLINE - TUDO PRONTO!');
+        if (connection === 'open') console.log('\n🚀 ALEX ONLINE - ÁUDIOS .OGG COM SOM ATIVOS!');
         if (connection === 'close') iniciarAlex();
     });
 
@@ -50,15 +50,22 @@ async function iniciarAlex() {
                 try {
                     await sock.sendPresenceUpdate('recording', jid);
                     await delay(tempoGravando);
+                    
+                    const buffer = fs.readFileSync(caminho);
+                    if (buffer.length === 0) {
+                        console.log(`⚠️ Alerta: O ficheiro ${nomeArquivo} está VAZIO!`);
+                        return;
+                    }
+
                     await sock.sendMessage(jid, { 
-                        audio: fs.readFileSync(caminho), 
+                        audio: buffer, 
                         mimetype: 'audio/ogg; codecs=opus', 
                         ptt: true 
                     });
-                    console.log(`✅ Áudio enviado: ${nomeArquivo}`);
+                    console.log(`✅ Áudio enviado com som: ${nomeArquivo}`);
                 } catch (e) { console.log(`❌ Erro no envio:`, e); }
             } else {
-                console.log(`⚠️ Arquivo não encontrado: ${nomeArquivo}`);
+                console.log(`⚠️ Ficheiro não encontrado no Termux: ${nomeArquivo}`);
             }
         }
 
@@ -88,7 +95,7 @@ async function iniciarAlex() {
 
         if (userState[from].step === 3) {
             userState[from].endereco = texto;
-            await sock.sendMessage(from, { text: "Perfeito! Me confirme seu *Nome Completo* e *CPF*? 👇" });
+            await sock.sendMessage(from, { text: "Perfeito! Reservando no sistema. Me confirme seu *Nome Completo* e *CPF*? 👇" });
             userState[from].step = 'finalizar';
             return;
         }
@@ -99,16 +106,17 @@ async function iniciarAlex() {
                     api_key: API_KEY_COINZZ,
                     product_id: PRODUCT_ID,
                     customer_phone: from.split('@')[0],
-                    customer_details: texto + " | Combo 5 Unids | " + userState[from].endereco,
+                    customer_details: texto + " | 5 Unids | " + userState[from].endereco,
                     payment_method: 'delivery'
                 });
                 await sock.sendMessage(from, { text: "✅ Pedido Confirmado! Valeu pela confiança! 👊" });
                 delete userState[from];
             } catch (e) {
-                await sock.sendMessage(from, { text: "Dados recebidos! Entraremos em contato em instantes. 🌸" });
+                await sock.sendMessage(from, { text: "Dados recebidos! Entraremos em contacto em instantes. 🌸" });
             }
         }
     });
 }
 
 iniciarAlex();
+
