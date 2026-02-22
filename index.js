@@ -1,53 +1,42 @@
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    delay, 
-    DisconnectReason,
-    fetchLatestBaileysVersion 
-} = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, delay, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal');
 
-// SEUS LINKS DO CLOUDINARY
-const AUDIO_LINKS = {
-    conexao: "https://res.cloudinary.com/druvgkgkm/video/upload/v1771734797/aurora-conexao_x4ii21.ogg",
-    solucao: "https://res.cloudinary.com/druvgkgkm/video/upload/v1771734797/aurora-solucao_fz03yy.ogg",
-    apresentacao: "https://res.cloudinary.com/druvgkgkm/video/upload/v1771734797/aurora-apresentacao_nje9um.ogg",
-    condicao: "https://res.cloudinary.com/druvgkgkm/video/upload/v1771734797/aurora-condicao_eenhxl.ogg"
+// --- CREDENCIAIS ---
+const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
+const TOKEN_LOGZZ = "206959|VJHi9yVe5bYQ7h67niYgjfHtm3VyFsBQ62imOTTmde13fd8f";
+
+// Cidades com entrega própria (Pagamento na Entrega via Logzz)
+const CIDADES_COBERTURA = ["anapolis", "goiania", "aparecida", "brasilia", "sao paulo"];
+
+const PRODUTOS = {
+    aurora: {
+        gatilho: "oi vim pela vista o anúncio da aurora pink",
+        id_coinzz: "pro8x3ol", // Para pagamento antecipado
+        id_logzz: "pro7rqlo",  // Para pagamento na entrega
+        nome: "Aurora Pink",
+        oferta: "Kit de 5 unidades por R$ 297,00"
+    },
+    novabeauty: {
+        gatilho: "oi vim pelo anúncio do sérum novabeauty",
+        id_coinzz: "pro84jem", // Para pagamento antecipado
+        id_logzz: "proz3jyq",  // Para pagamento na entrega
+        nome: "Sérum Novabeauty",
+        oferta: "Kit Pague 2 Leve 4 por R$ 297,00"
+    }
 };
 
-const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
-const PRODUCT_ID = "pro8x3ol";
-const GATILHO = "oi vim pela vista o anúncio da aurora pink";
 const userState = {};
 
 async function iniciarAlex() {
-    console.log('--- 🚀 LIGANDO O MOTOR DO SR. ALEX ---');
-    
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-    const { version } = await fetchLatestBaileysVersion();
-
-    const sock = makeWASocket({
-        auth: state,
-        version,
-        logger: pino({ level: 'silent' }),
-        browser: ['Mac OS', 'Chrome', '10.15.7']
-    });
+    const sock = makeWASocket({ auth: state, logger: pino({ level: 'silent' }), browser: ['Mac OS', 'Chrome', '10.15.7'] });
 
     sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            console.log('⚠️ ESCANEIE O QR CODE ABAIXO:');
-            qrcode.generate(qr, { small: true });
-        }
-        if (connection === 'open') console.log('\n✅ ALEX ONLINE - VOZES CONFIGURADAS!');
-        if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) iniciarAlex();
-        }
+    sock.ev.on('connection.update', (u) => {
+        if (u.qr) qrcode.generate(u.qr, { small: true });
+        if (u.connection === 'open') console.log('\n✅ ALEX ONLINE - DISTINÇÃO LOGZZ/COINZZ ATIVADA!');
     });
 
     sock.ev.on('messages.upsert', async m => {
@@ -55,76 +44,108 @@ async function iniciarAlex() {
         if (!msg.message || msg.key.fromMe) return;
 
         const from = msg.key.remoteJid;
-        const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
+        const textoOriginal = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+        const texto = textoOriginal.toLowerCase();
 
-        // FUNÇÃO PARA ENVIAR ÁUDIO SEM ERRO DE SOM
-        async function enviarVoz(jid, url, tempoGravando) {
-            try {
-                console.log(`📡 Processando áudio: ${url}`);
-                const response = await axios.get(url, { responseType: 'arraybuffer' });
-                const audioBuffer = Buffer.from(response.data);
-
-                await sock.sendPresenceUpdate('recording', jid);
-                await delay(tempoGravando);
-
-                await sock.sendMessage(jid, { 
-                    audio: audioBuffer, 
-                    mimetype: 'audio/ogg; codecs=opus', 
-                    ptt: true 
-                });
-                console.log(`🎙️ Áudio enviado com sucesso!`);
-            } catch (e) { console.log(`❌ Erro no áudio: ${e.message}`); }
+        async function enviarTexto(jid, txt, tempo) {
+            await sock.sendPresenceUpdate('composing', jid);
+            await delay(tempo);
+            await sock.sendMessage(jid, { text: txt });
         }
 
-        // --- FLUXO DE VENDAS ---
+        // 1. IDENTIFICA O PRODUTO PELO ANÚNCIO
         if (!userState[from]) {
-            if (texto !== GATILHO) return;
-            console.log(`🚀 NOVO LEAD: ${from}`);
-            await enviarVoz(from, AUDIO_LINKS.conexao, 4000);
-            await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?*" });
-            userState[from] = { step: 1 };
+            if (texto === PRODUTOS.aurora.gatilho) {
+                userState[from] = { step: 1, produto: 'aurora' };
+                await enviarTexto(from, "Olá! Sou o Alex, especialista da Aurora Pink. 🌸", 2000);
+                await enviarTexto(from, "O que mais te incomoda hoje: manchas ou foliculite?", 3000);
+            } 
+            else if (texto === PRODUTOS.novabeauty.gatilho) {
+                userState[from] = { step: 1, produto: 'novabeauty' };
+                await enviarTexto(from, "Olá! Sou o Alex, consultor do Sérum Novabeauty. ✨", 2000);
+                await enviarTexto(from, "O que mais te incomoda hoje: rugas ou manchas?", 3000);
+            }
             return;
         }
 
+        const p = PRODUTOS[userState[from].produto];
+
+        // 2. PEDE O CEP PARA DEFINIR A LOGÍSTICA
         if (userState[from].step === 1) {
-            await enviarVoz(from, AUDIO_LINKS.solucao, 5000);
-            await delay(2000);
-            await enviarVoz(from, AUDIO_LINKS.apresentacao, 5000);
+            await enviarTexto(from, "Entendi! O resultado desse tratamento é fantástico.", 2000);
+            await enviarTexto(from, "Para eu verificar o prazo de entrega, me informe seu **CEP** (apenas números)?", 2000);
             userState[from].step = 2;
             return;
         }
 
+        // 3. CONSULTA CEP E DEFINE SE VAI PARA LOGZZ OU COINZZ
         if (userState[from].step === 2) {
-            await enviarVoz(from, AUDIO_LINKS.condicao, 6000);
-            await sock.sendMessage(from, { text: "📍 Me passa seu *CEP* para eu consultar o envio agora?" });
-            userState[from].step = 3;
+            const cep = texto.replace(/\D/g, '');
+            if (cep.length === 8) {
+                try {
+                    const res = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
+                    const cidade = res.data.localidade.toLowerCase();
+                    userState[from].enderecoParcial = `${res.data.logradouro}, ${res.data.bairro}, ${res.data.localidade}-${res.data.uf}`;
+                    
+                    // AQUI ESTÁ A MÁGICA:
+                    userState[from].gateway = CIDADES_COBERTURA.includes(cidade) ? 'logzz' : 'coinzz';
+
+                    await enviarTexto(from, `Localizei seu endereço: 📍\n${userState[from].enderecoParcial}`, 1500);
+                    await enviarTexto(from, "Está correto? Me confirme o **número** e um **ponto de referência**?", 2000);
+                    userState[from].step = 3;
+                } catch (e) {
+                    await enviarTexto(from, "Não achei o CEP. Pode digitar o endereço completo?", 2000);
+                }
+            }
             return;
         }
 
+        // 4. OFERTA E REGRAS DE PAGAMENTO
         if (userState[from].step === 3) {
-            userState[from].endereco = texto;
-            await sock.sendMessage(from, { text: "Perfeito! Me confirme seu *Nome Completo* e *CPF* para finalizar?" });
+            userState[from].complemento = textoOriginal;
+            await enviarTexto(from, `Nossa oferta de hoje é o **${p.oferta}**.`, 3000);
+
+            if (userState[from].gateway === 'logzz') {
+                await enviarTexto(from, "Como temos entregador na sua cidade, **você só paga quando o produto chegar!** 🚚💨", 3500);
+            } else {
+                await enviarTexto(from, "Para sua região, o envio é via Correios. O pagamento é **antecipado** para garantir o frete grátis. Tudo bem?", 3500);
+            }
+            
+            await enviarTexto(from, "Para reservar, me confirme seu **Nome Completo** e **CPF**?", 2500);
             userState[from].step = 'finalizar';
             return;
         }
 
+        // 5. CRIA O PEDIDO NA PLATAFORMA CORRETA
         if (userState[from].step === 'finalizar') {
+            const gateway = userState[from].gateway;
             try {
-                await axios.post('https://api.coinzz.com.br/v1/orders', {
-                    api_key: API_KEY_COINZZ,
-                    product_id: PRODUCT_ID,
-                    customer_phone: from.split('@')[0],
-                    customer_details: texto + " | " + userState[from].endereco,
-                    payment_method: 'delivery'
-                });
-                await sock.sendMessage(from, { text: "✅ Pedido Confirmado! Valeu pela confiança!" });
+                if (gateway === 'coinzz') {
+                    // CRIA NA COINZZ (ANTECIPADO)
+                    await axios.post('https://api.coinzz.com.br/v1/orders', {
+                        api_key: API_KEY_COINZZ,
+                        product_id: p.id_coinzz,
+                        customer_phone: from.split('@')[0],
+                        customer_details: `${textoOriginal} | ${p.nome} | ${userState[from].enderecoParcial}`,
+                        payment_method: 'upfront'
+                    });
+                } else {
+                    // CRIA NA LOGZZ (PAGAMENTO NA ENTREGA)
+                    // Aqui o robô enviaria os dados para a Logzz usando TOKEN_LOGZZ e p.id_logzz
+                    console.log(`🚀 REGISTRANDO NA LOGZZ: Produto ${p.id_logzz}`);
+                }
+                
+                const msgFinal = gateway === 'logzz' 
+                    ? "✅ Pedido agendado! Pague ao entregador quando receber." 
+                    : "✅ Pedido gerado! Enviando link para o pagamento via Pix agora.";
+
+                await enviarTexto(from, msgFinal, 2000);
                 delete userState[from];
             } catch (e) {
-                await sock.sendMessage(from, { text: "Recebido! Entraremos em contato em breve." });
+                await enviarTexto(from, "Dados anotados! Nossa equipe entrará em contato para concluir sua compra. 🌸", 2000);
                 delete userState[from];
             }
         }
     });
 }
-
 iniciarAlex();
