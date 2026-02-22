@@ -14,7 +14,6 @@ const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
 const TOKEN_LOGZZ = "206959|VJHi9yVe5bYQ7h67niYgjfHtm3VyFsBQ62imOTTmde13fd8f";
 
 // Lista de Segurança: Cidades que o senhor SABE que a Logzz atende aí
-const CIDADES_LOGZZ = ["anápolis", "anapolis", "goiânia", "goiania", "aparecida de goiânia", "brasília", "são paulo"];
 
 const PRODUTOS = {
     aurora: {
@@ -41,7 +40,7 @@ const normalizar = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
 // FUNÇÃO PARA CONSULTAR COBERTURA NA LOGZZ (API)
 async function consultarCoberturaLogzz(cep, idProduto) {
     try {
-        const res = await axios.get(`https://api.logzz.com.br/v1/shipping/calculate`, {
+        const res = await axios.get(`https://app.logzz.com.br/v1/shipping/calculate`, {
             params: { token: TOKEN_LOGZZ, cep: cep, product_id: idProduto }
         });
         const metodos = res.data.shipping_methods || [];
