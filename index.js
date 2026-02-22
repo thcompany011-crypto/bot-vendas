@@ -9,47 +9,53 @@ const pino = require('pino');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal');
 
-// --- CREDENCIAIS DO SR. ALEX ---
+// --- CONFIGURAÇÕES DO SR. ALEX ---
 const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
 const TOKEN_LOGZZ = "206959|VJHi9yVe5bYQ7h67niYgjfHtm3VyFsBQ62imOTTmde13fd8f";
+
+// Lista de Segurança: Cidades que o senhor SABE que a Logzz atende aí
+const CIDADES_LOGZZ = ["anápolis", "anapolis", "goiânia", "goiania", "aparecida de goiânia", "brasília", "são paulo"];
 
 const PRODUTOS = {
     aurora: {
         gatilho: "oi vim pela vista o anúncio da aurora pink",
-        id_coinzz: "pro8x3ol", 
-        id_logzz: "pro7rqlo", //
+        id_coinzz: "pro8x3ol",
+        id_logzz: "pro7rqlo",
         nome: "Aurora Pink",
         oferta: "Kit de 5 unidades por R$ 297,00"
     },
     novabeauty: {
         gatilho: "oi vim pelo anúncio do sérum novabeauty",
-        id_coinzz: "pro84jem", //
-        id_logzz: "proz3jyq", //
+        id_coinzz: "pro84jem",
+        id_logzz: "proz3jyq",
         nome: "Sérum Novabeauty",
-        oferta: "Kit Pague 2 Leve 4 por R$ 297,00" //
+        oferta: "Kit Pague 2 Leve 4 por R$ 297,00"
     }
 };
 
 const userState = {};
 
-// FUNÇÃO PARA CONSULTAR COBERTURA NA LOGZZ (API REAL)
+// Função para remover acentos e facilitar a comparação de cidades
+const normalizar = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+// FUNÇÃO PARA CONSULTAR COBERTURA NA LOGZZ (API)
 async function consultarCoberturaLogzz(cep, idProduto) {
     try {
-        // Simulação de chamada de frete/cobertura baseada no token do Sr. Alex
-        const response = await axios.get(`https://api.logzz.com.br/v1/shipping/calculate`, {
+        const res = await axios.get(`https://api.logzz.com.br/v1/shipping/calculate`, {
             params: { token: TOKEN_LOGZZ, cep: cep, product_id: idProduto }
-        }).catch(() => ({ data: { shipping_methods: [] } }));
-
-        const metodos = response.data.shipping_methods || [];
-        // Se a Logzz retornar algum método de "Entrega Local" ou "Motoboy", ela aceita COD
-        return metodos.some(m => m.name.toLowerCase().includes("local") || m.cod === true);
+        });
+        const metodos = res.data.shipping_methods || [];
+        // Se retornar algum método com 'cod' ou 'local', aceita pagamento na entrega
+        return metodos.some(m => m.cod === true || m.name.toLowerCase().includes("local"));
     } catch (e) {
         return false; 
     }
 }
 
 async function iniciarAlex() {
-    console.log('--- 🚀 LIGANDO O MOTOR DO SR. ALEX ---');
+    console.log('--- 🚀 MOTOR INTELIGENTE LIGADO: LOGZZ & COINZZ ---');
+    
+    // O USO DA PASTA 'auth_info' GARANTE QUE O LOGIN SEJA MANTIDO
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -58,7 +64,7 @@ async function iniciarAlex() {
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: true,
-        browser: ['Mac OS', 'Chrome', '10.15.7']
+        browser: ['Sr. Alex - Vendas', 'Chrome', '1.0.0']
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -66,7 +72,7 @@ async function iniciarAlex() {
     sock.ev.on('connection.update', (u) => {
         const { connection, lastDisconnect, qr } = u;
         if (qr) qrcode.generate(qr, { small: true });
-        if (connection === 'open') console.log('\n🌟 SISTEMA ONLINE - PRONTO PARA VENDER R$ 297!');
+        if (connection === 'open') console.log('\n🌟 ROBÔ DO SR. ALEX ESTÁ ONLINE E CONECTADO!');
         if (connection === 'close') {
             const deviaReconectar = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
             if (deviaReconectar) iniciarAlex();
@@ -87,15 +93,16 @@ async function iniciarAlex() {
             await sock.sendMessage(jid, { text: txt });
         }
 
-        // 1. GATILHO INICIAL
+        // 1. GATILHOS INICIAIS
         if (!userState[from]) {
-            if (texto === PRODUTOS.aurora.gatilho) {
+            if (texto.includes("aurora pink")) {
                 userState[from] = { step: 1, produto: 'aurora' };
-                await enviarTexto(from, "Olá! Sou o Alex, especialista da Aurora Pink. 🌸", 2000);
-                await enviarTexto(from, "Pra eu te indicar o tratamento ideal, o que mais te incomoda hoje: manchas ou foliculite?", 3000);
-            } else if (texto === PRODUTOS.novabeauty.gatilho) {
+                await enviarTexto(from, "Olá! Sou o Alex da Aurora Pink. 🌸", 2000);
+                await enviarTexto(from, "Para eu te indicar o melhor kit, o que mais te incomoda: manchas ou foliculite?", 2500);
+            } else if (texto.includes("sérum novabeauty")) {
                 userState[from] = { step: 1, produto: 'novabeauty' };
-                await enviarTexto(from, "Olá! Sou o Alex, consultor do Sérum Novabeauty. ✨ Qual o seu maior incômodo hoje?", 2000);
+                await enviarTexto(from, "Olá! Sou o Alex, consultor do Novabeauty. ✨", 2000);
+                await enviarTexto(from, "Qual o seu foco hoje: rugas ou manchas?", 2500);
             }
             return;
         }
@@ -104,73 +111,91 @@ async function iniciarAlex() {
 
         // 2. PEDIDO DE CEP
         if (userState[from].step === 1) {
-            await enviarTexto(from, "Entendi! O resultado é fantástico. Para eu verificar a entrega, me informe seu **CEP** (apenas números)?", 2000);
+            await enviarTexto(from, "Perfeito! Para eu verificar a logística e o prazo, me informe seu **CEP** (apenas números)?", 2000);
             userState[from].step = 2;
             return;
         }
 
-        // 3. CONSULTA VIACEP + LOGZZ API
+        // 3. CONSULTA VIACEP + DECISÃO LOGÍSTICA
         if (userState[from].step === 2) {
             const cep = texto.replace(/\D/g, '');
             if (cep.length === 8) {
                 try {
                     const resVia = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
-                    if (resVia.data.erro) throw new Error();
-
                     const d = resVia.data;
+                    const cidadeAPI = d.localidade;
+                    
                     userState[from].enderecoParcial = `${d.logradouro}, ${d.bairro}, ${d.localidade}-${d.uf}`;
 
-                    // CONSULTA A LOGZZ (AQUI É ONDE ELE DECIDE)
-                    const temCoberturaLogzz = await consultarCoberturaLogzz(cep, p.id_logzz);
-                    userState[from].gateway = temCoberturaLogzz ? 'logzz' : 'coinzz';
+                    // TESTE DUPLO: Lista de Cidades OU API da Logzz
+                    const naLista = CIDADES_LOGZZ.some(c => normalizar(cidadeAPI).includes(normalizar(c)));
+                    const naAPI = await consultarCoberturaLogzz(cep, p.id_logzz);
 
-                    await enviarTexto(from, `Localizei seu endereço! 📍\n${userState[from].enderecoParcial}`, 1500);
-                    await enviarTexto(from, "Está correto? Me confirme apenas o **número da casa** e uma **referência**?", 2000);
+                    userState[from].gateway = (naLista || naAPI) ? 'logzz' : 'coinzz';
+                    
+                    console.log(`📍 CEP: ${cep} | Cidade: ${cidadeAPI} | Gateway: ${userState[from].gateway}`);
+
+                    await enviarTexto(from, `Localizei seu endereço: 📍\n${userState[from].enderecoParcial}`, 1500);
+                    await enviarTexto(from, "Está correto? Me informe o **número** e uma **referência**?", 2000);
                     userState[from].step = 3;
-                } catch (e) {
-                    await enviarTexto(from, "CEP inválido. Digite seu endereço completo, por favor?", 2000);
-                }
+                } catch (e) { await enviarTexto(from, "CEP não encontrado. Digite o endereço completo?", 2000); }
             }
             return;
         }
 
-        // 4. OFERTA E DEFINIÇÃO DE PAGAMENTO
+        // 4. OFERTA E REGRAS DE PAGAMENTO
         if (userState[from].step === 3) {
             userState[from].complemento = textoOriginal;
-            await enviarTexto(from, `Ótima notícia! Nossa melhor oferta hoje é o **${p.oferta}**.`, 3000);
+            await enviarTexto(from, `Nossa melhor oferta hoje é o **${p.oferta}**.`, 3000);
 
             if (userState[from].gateway === 'logzz') {
-                await enviarTexto(from, "Consegui aqui! Temos entregador para você. **Você só paga quando o produto chegar!** 🚚💨", 3500);
+                await enviarTexto(from, "Temos entregador disponível para você! **Você só paga quando o produto chegar.** 🚚💨", 3500);
             } else {
-                await enviarTexto(from, "Para sua região, o envio é via Correios. O pagamento é **antecipado** (Pix ou Cartão) para garantirmos o frete grátis. Tudo bem?", 3500);
+                await enviarTexto(from, "O envio para sua região é via Correios. Por isso, o pagamento é **Pix ou Cartão antecipado**. Tudo bem?", 3500);
             }
-            
-            await enviarTexto(from, "Para reservar seu kit, me confirme seu **Nome Completo** e **CPF**?", 2500);
+            await enviarTexto(from, "Para reservar seu kit agora, me confirme seu **Nome Completo** e **CPF**?", 2500);
             userState[from].step = 'finalizar';
             return;
         }
 
-        // 5. REGISTRO FINAL (LOGZZ OU COINZZ)
+        // 5. CRIAÇÃO DO PEDIDO (API REAL)
         if (userState[from].step === 'finalizar') {
+            const cpfLimpo = textoOriginal.replace(/\D/g, '').substring(0, 11);
+            const telLimpo = from.split('@')[0].replace(/\D/g, '');
+
             try {
                 if (userState[from].gateway === 'coinzz') {
+                    // PEDIDO COINZZ
                     await axios.post('https://api.coinzz.com.br/v1/orders', {
                         api_key: API_KEY_COINZZ,
                         product_id: p.id_coinzz,
-                        customer_phone: from.split('@')[0],
-                        customer_details: `${textoOriginal} | ${p.nome} | ${userState[from].enderecoParcial}`,
+                        customer_name: textoOriginal.split('|')[0].trim(),
+                        customer_cpf: cpfLimpo,
+                        customer_phone: telLimpo,
+                        customer_details: `Endereço: ${userState[from].enderecoParcial} | Ref: ${userState[from].complemento}`,
                         payment_method: 'upfront'
                     });
+                    await enviarTexto(from, "✅ Pedido gerado com sucesso! Enviando link para o pagamento via Pix agora.", 2000);
+                } else {
+                    // PEDIDO LOGZZ
+                    await axios.post('https://api.logzz.com.br/v1/orders', {
+                        token: TOKEN_LOGZZ,
+                        product_id: p.id_logzz,
+                        customer_name: textoOriginal.split('|')[0].trim(),
+                        customer_cpf: cpfLimpo,
+                        customer_phone: telLimpo,
+                        address: userState[from].enderecoParcial,
+                        address_number: userState[from].complemento,
+                        payment_method: 'cod'
+                    });
+                    await enviarTexto(from, "✅ Pedido agendado! Prepare o valor, você paga na hora de receber.", 2000);
                 }
-                await enviarTexto(from, "✅ Pedido gerado! Você receberá os detalhes em instantes. Valeu pela confiança!", 2000);
-                delete userState[from];
             } catch (e) {
-                await enviarTexto(from, "Dados anotados! Nossa equipe entrará em contato em breve. 🌸", 2000);
-                delete userState[from];
+                console.error("❌ ERRO NA API:", e.response?.data || e.message);
+                await enviarTexto(from, "Dados anotados! Nossa equipe entrará em contato para finalizar sua compra. 🌸", 2000);
             }
+            delete userState[from];
         }
     });
 }
-
-// EXECUÇÃO COM TRATAMENTO DE ERRO PARA NÃO MORRER
-iniciarAlex().catch(err => console.error("❌ ERRO AO LIGAR O MOTOR:", err));
+iniciarAlex();
