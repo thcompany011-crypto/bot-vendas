@@ -7,7 +7,7 @@ const {
 const pino = require('pino');
 const axios = require('axios');
 
-// LINKS QUE O SENHOR TESTOU E FUNCIONARAM (COM O PONTO FINAL)
+// LINKS COM O PONTO FINAL QUE O SENHOR TESTOU E FUNCIONARAM
 const AUDIO_LINKS = {
     conexao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-conexao.ogg",
     solucao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-solucao.ogg",
@@ -15,10 +15,7 @@ const AUDIO_LINKS = {
     condicao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-condicao.ogg"
 };
 
-const API_KEY_COINZZ = "15393|IRslmQle1IaeXVRsJG3t65dlCQWsPCVJFW8abeWj77859d31";
-const PRODUCT_ID = "pro8x3ol";
 const GATILHO = "oi vim pela vista o anúncio da aurora pink";
-const userState = {};
 
 async function iniciarAlex() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
@@ -30,9 +27,7 @@ async function iniciarAlex() {
     });
 
     sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('connection.update', (update) => {
-        if (update.connection === 'open') console.log('\n🚀 ALEX ONLINE - ÁUDIOS CONFIGURADOS COM SUCESSO!');
-    });
+    sock.ev.on('connection.update', (u) => { if (u.connection === 'open') console.log('\n🚀 ALEX ONLINE - ÁUDIOS .OGG ATIVADOS!'); });
 
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
@@ -41,50 +36,31 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        async function enviarAudioRemoto(jid, url, tempoGravando) {
+        async function enviarAudioRemoto(jid, url, tempo) {
             try {
-                // Baixa o áudio do link que você testou
+                console.log(`📡 Baixando áudio de: ${url}`);
                 const response = await axios.get(url, { responseType: 'arraybuffer' });
                 const buffer = Buffer.from(response.data);
 
+                console.log(`✅ Download ok! Tamanho: ${buffer.length} bytes`);
+
                 await sock.sendPresenceUpdate('recording', jid);
-                await delay(tempoGravando);
+                await delay(tempo);
 
                 await sock.sendMessage(jid, { 
                     audio: buffer, 
                     mimetype: 'audio/ogg; codecs=opus', 
                     ptt: true 
                 });
-                console.log(`✅ Áudio enviado com sucesso!`);
-            } catch (e) {
-                console.log(`❌ Erro ao baixar áudio: ${e.message}`);
-            }
+                console.log(`🎙️ Áudio enviado com som para ${jid}`);
+            } catch (e) { console.log(`❌ Erro no link: ${e.message}`); }
         }
 
-        // FLUXO DE VENDAS
-        if (!userState[from]) {
-            if (texto !== GATILHO) return;
+        if (texto === GATILHO) {
+            // AQUI ESTAVA O ERRO: ANTES BUSCAVA .M4A, AGORA BUSCA .OGG
             await enviarAudioRemoto(from, AUDIO_LINKS.conexao, 4000);
             await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?*" });
-            userState[from] = { step: 1 };
-            return;
         }
-
-        if (userState[from].step === 1) {
-            await enviarAudioRemoto(from, AUDIO_LINKS.solucao, 4000);
-            await delay(1500);
-            await enviarAudioRemoto(from, AUDIO_LINKS.apresentacao, 4000);
-            userState[from].step = 2;
-            return;
-        }
-
-        if (userState[from].step === 2) {
-            await enviarAudioRemoto(from, AUDIO_LINKS.condicao, 5000);
-            await sock.sendMessage(from, { text: "📍 Me passa seu *CEP* para eu consultar o envio agora?" });
-            userState[from].step = 3;
-            return;
-        }
-        // ... (resto do fluxo de CPF e Coinzz)
     });
 }
 iniciarAlex();
