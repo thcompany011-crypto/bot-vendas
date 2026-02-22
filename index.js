@@ -6,9 +6,10 @@ const {
     fetchLatestBaileysVersion 
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
 const axios = require('axios');
+const qrcode = require('qrcode-terminal');
 
+// SEUS LINKS DO CLOUDINARY
 const AUDIO_LINKS = {
     conexao: "https://res.cloudinary.com/druvgkgkm/video/upload/v1771734797/aurora-conexao_x4ii21.ogg",
     solucao: "https://res.cloudinary.com/druvgkgkm/video/upload/v1771734797/aurora-solucao_fz03yy.ogg",
@@ -22,7 +23,8 @@ const GATILHO = "oi vim pela vista o anúncio da aurora pink";
 const userState = {};
 
 async function iniciarAlex() {
-    console.log('--- 🚀 TENTATIVA FINAL DE VOZ: SR. ALEX ---');
+    console.log('--- 🚀 LIGANDO O MOTOR DO SR. ALEX ---');
+    
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version } = await fetchLatestBaileysVersion();
 
@@ -34,10 +36,18 @@ async function iniciarAlex() {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
     sock.ev.on('connection.update', (update) => {
-        const { connection, qr } = update;
-        if (qr) qrcode.generate(qr, { small: true });
-        if (connection === 'open') console.log('\n✅ ALEX ONLINE - TESTANDO TRUQUE DE ÁUDIO MP4');
+        const { connection, lastDisconnect, qr } = update;
+        if (qr) {
+            console.log('⚠️ ESCANEIE O QR CODE ABAIXO:');
+            qrcode.generate(qr, { small: true });
+        }
+        if (connection === 'open') console.log('\n✅ ALEX ONLINE - VOZES CONFIGURADAS!');
+        if (connection === 'close') {
+            const reason = lastDisconnect?.error?.output?.statusCode;
+            if (reason !== DisconnectReason.loggedOut) iniciarAlex();
+        }
     });
 
     sock.ev.on('messages.upsert', async m => {
@@ -47,36 +57,74 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        async function enviarVozMagica(jid, url, tempo) {
+        // FUNÇÃO PARA ENVIAR ÁUDIO SEM ERRO DE SOM
+        async function enviarVoz(jid, url, tempoGravando) {
             try {
-                await sock.sendPresenceUpdate('recording', jid);
-                await delay(tempo);
+                console.log(`📡 Processando áudio: ${url}`);
+                const response = await axios.get(url, { responseType: 'arraybuffer' });
+                const audioBuffer = Buffer.from(response.data);
 
-                // O TRUQUE: Enviamos a URL direta e dizemos que é audio/mp4
-                // Isso resolve 99% dos problemas de áudio mudo em bots
+                await sock.sendPresenceUpdate('recording', jid);
+                await delay(tempoGravando);
+
                 await sock.sendMessage(jid, { 
-                    audio: { url: url }, 
-                    mimetype: 'audio/mp4', 
+                    audio: audioBuffer, 
+                    mimetype: 'audio/ogg; codecs=opus', 
                     ptt: true 
                 });
-                console.log(`🎙️ Áudio enviado via URL direta!`);
-            } catch (e) { console.log(`❌ Erro: ${e.message}`); }
+                console.log(`🎙️ Áudio enviado com sucesso!`);
+            } catch (e) { console.log(`❌ Erro no áudio: ${e.message}`); }
         }
 
+        // --- FLUXO DE VENDAS ---
         if (!userState[from]) {
             if (texto !== GATILHO) return;
-            await enviarVozMagica(from, AUDIO_LINKS.conexao, 5000);
-            await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta: o que mais te incomoda hoje?" });
+            console.log(`🚀 NOVO LEAD: ${from}`);
+            await enviarVoz(from, AUDIO_LINKS.conexao, 4000);
+            await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?*" });
             userState[from] = { step: 1 };
             return;
         }
 
         if (userState[from].step === 1) {
-            await enviarVozMagica(from, AUDIO_LINKS.solucao, 5000);
+            await enviarVoz(from, AUDIO_LINKS.solucao, 5000);
             await delay(2000);
-            await enviarVozMagica(from, AUDIO_LINKS.apresentacao, 5000);
+            await enviarVoz(from, AUDIO_LINKS.apresentacao, 5000);
             userState[from].step = 2;
+            return;
+        }
+
+        if (userState[from].step === 2) {
+            await enviarVoz(from, AUDIO_LINKS.condicao, 6000);
+            await sock.sendMessage(from, { text: "📍 Me passa seu *CEP* para eu consultar o envio agora?" });
+            userState[from].step = 3;
+            return;
+        }
+
+        if (userState[from].step === 3) {
+            userState[from].endereco = texto;
+            await sock.sendMessage(from, { text: "Perfeito! Me confirme seu *Nome Completo* e *CPF* para finalizar?" });
+            userState[from].step = 'finalizar';
+            return;
+        }
+
+        if (userState[from].step === 'finalizar') {
+            try {
+                await axios.post('https://api.coinzz.com.br/v1/orders', {
+                    api_key: API_KEY_COINZZ,
+                    product_id: PRODUCT_ID,
+                    customer_phone: from.split('@')[0],
+                    customer_details: texto + " | " + userState[from].endereco,
+                    payment_method: 'delivery'
+                });
+                await sock.sendMessage(from, { text: "✅ Pedido Confirmado! Valeu pela confiança!" });
+                delete userState[from];
+            } catch (e) {
+                await sock.sendMessage(from, { text: "Recebido! Entraremos em contato em breve." });
+                delete userState[from];
+            }
         }
     });
 }
+
 iniciarAlex();
