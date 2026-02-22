@@ -6,15 +6,20 @@ const {
     fetchLatestBaileysVersion 
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const fs = require('fs');
-const path = require('path');
 const qrcode = require('qrcode-terminal');
+
+const AUDIO_LINKS = {
+    conexao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-conexao.ogg",
+    solucao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-solucao.ogg",
+    apresentacao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-apresentacao.ogg",
+    condicao: "https://raw.githubusercontent.com/thcompany011-crypto/bot-aurora-coinzz./main/audios/aurora-condicao.ogg"
+};
 
 const GATILHO = "oi vim pela vista o anúncio da aurora pink";
 const userState = {};
 
 async function iniciarAlex() {
-    console.log('--- 🚀 LIGANDO O MOTOR DO SR. ALEX ---');
+    console.log('--- 🚀 MOTOR DO SR. ALEX: TESTE DE SOM FINAL ---');
     
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     const { version } = await fetchLatestBaileysVersion();
@@ -29,21 +34,12 @@ async function iniciarAlex() {
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
+        const { connection, qr } = update;
         if (qr) {
-            console.log('⚠️ ESCANEIE O QR CODE ABAIXO PARA CONECTAR:');
+            console.log('⚠️ ESCANEIE O QR CODE:');
             qrcode.generate(qr, { small: true });
         }
-
-        if (connection === 'open') {
-            console.log('\n✅ ALEX ONLINE - FLUXO COMPLETO ATIVADO!');
-        }
-        
-        if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) iniciarAlex();
-        }
+        if (connection === 'open') console.log('\n✅ ALEX ONLINE - AGUARDANDO GATILHO PARA TESTE DE VOZ!');
     });
 
     sock.ev.on('messages.upsert', async m => {
@@ -53,45 +49,29 @@ async function iniciarAlex() {
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").toLowerCase().trim();
 
-        async function enviarAudio(jid, arquivo, tempo) {
-            const caminho = path.resolve(__dirname, 'audios', arquivo);
-            if (fs.existsSync(caminho)) {
-                try {
-                    await sock.sendPresenceUpdate('recording', jid);
-                    await delay(tempo);
-                    await sock.sendMessage(jid, { 
-                        audio: fs.readFileSync(caminho), 
-                        mimetype: 'audio/ogg; codecs=opus', 
-                        ptt: true 
-                    });
-                    console.log(`✅ Enviado: ${arquivo}`);
-                } catch (e) { console.log(`❌ Erro no envio de ${arquivo}`); }
+        async function enviarVozDireta(jid, url, tempo) {
+            try {
+                await sock.sendPresenceUpdate('recording', jid);
+                await delay(tempo);
+
+                // O SEGREDO: Usar a URL diretamente e mudar o mimetype para audio/mp4
+                // Mesmo sendo .ogg, o WhatsApp processa melhor assim como nota de voz.
+                await sock.sendMessage(jid, { 
+                    audio: { url: url }, 
+                    mimetype: 'audio/mp4', 
+                    ptt: true 
+                });
+                
+                console.log(`🎙️ Áudio enviado via URL direta!`);
+            } catch (e) {
+                console.log(`❌ Erro no envio: ${e.message}`);
             }
         }
 
-        // --- SEU FLUXO ANTIGO DE VOLTA ---
-        if (!userState[from]) {
-            if (texto !== GATILHO) return;
-            console.log(`🚀 NOVO LEAD: ${from}`);
-            await enviarAudio(from, 'aurora-conexao.ogg', 4000);
-            await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje? *Manchas ou foliculite?*" });
-            userState[from] = { step: 1 };
-            return;
-        }
-
-        if (userState[from].step === 1) {
-            await enviarAudio(from, 'aurora-solucao.ogg', 4000);
-            await delay(1500);
-            await enviarAudio(from, 'aurora-apresentacao.ogg', 4000);
-            userState[from].step = 2;
-            return;
-        }
-
-        if (userState[from].step === 2) {
-            await enviarAudio(from, 'aurora-condicao.ogg', 6000);
-            await sock.sendMessage(from, { text: "📍 Me passa seu *CEP* para eu consultar o envio agora?" });
-            userState[from].step = 3;
-            return;
+        if (texto === GATILHO) {
+            console.log(`🚀 Testando voz para: ${from}`);
+            await enviarVozDireta(from, AUDIO_LINKS.conexao, 4000);
+            await sock.sendMessage(from, { text: "Opa! Sou o Alex. Me conta aqui: o que mais te incomoda hoje?" });
         }
     });
 }
