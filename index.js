@@ -56,25 +56,29 @@ function responderFAQ(texto, produto) {
 async function iniciar() {
     console.log('--- 🚀 LIGANDO A MÁQUINA DE VENDAS DO SR. ALEX ---');
     const { state, saveCreds } = await useMultiFileAuthState('auth_alex');
-    const sock = makeWASocket({ auth: state, logger: pino({ level: 'silent' }) });
+    
+    // AQUI ESTÁ A CORREÇÃO DO QR CODE:
+    const sock = makeWASocket({ 
+        auth: state, 
+        printQRInTerminal: true, 
+        logger: pino({ level: 'silent' }) 
+    });
     
     sock.ev.on('creds.update', saveCreds);
 
-    // 🔥 O MOTOR DE ARRANQUE (MANTÉM O ROBÔ VIVO)
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('\n⚠️ ATENÇÃO: O WhatsApp desconectou! Você precisará ler o QR Code de novo se instalou a biblioteca do QR.');
-        }
+        const { connection, lastDisconnect } = update;
         
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== 401;
-            console.log('🔄 Conexão caiu. Tentando reconectar...');
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== 401;
+            
             if(shouldReconnect) {
-                iniciar();
+                // AQUI ESTÁ A CORREÇÃO DO FREIO (3 SEGUNDOS):
+                console.log(`🔄 Conexão caiu. Tentando reconectar em 3 segundos...`);
+                setTimeout(iniciar, 3000); 
             } else {
-                console.log('❌ Sessão inválida. Apague a pasta auth_alex e rode novamente.');
+                console.log('❌ Sessão inválida (WhatsApp desconectado). Apague a pasta auth_alex e rode novamente.');
             }
         } else if (connection === 'open') {
             console.log('✅ WhatsApp conectado com SUCESSO! Robô pronto para vender.');
