@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, delay, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal'); 
@@ -58,10 +58,15 @@ async function iniciar() {
     console.log('--- 🚀 LIGANDO A MÁQUINA DE VENDAS DO SR. ALEX ---');
     const { state, saveCreds } = await useMultiFileAuthState('auth_alex');
     
+    // O RADAR: Busca a versão mais recente do WhatsApp para não ser bloqueado
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`📡 Usando a versão mais recente do WhatsApp Web: v${version.join('.')}`);
+
     const sock = makeWASocket({ 
+        version, // Informa a versão correta
         auth: state, 
         logger: pino({ level: 'silent' }),
-        browser: ['Mac OS', 'Chrome', '10.0.0'], // <-- O CRACHÁ DE IDENTIFICAÇÃO AQUI
+        browser: Browsers.macOS('Desktop'), // Crachá oficial
         syncFullHistory: false
     });
     
@@ -81,7 +86,6 @@ async function iniciar() {
             const shouldReconnect = statusCode !== 401;
             
             if(shouldReconnect) {
-                // AGORA ELE VAI NOS DIZER O MOTIVO EXATO DA QUEDA:
                 console.log(`🔄 Conexão caiu (Erro: ${statusCode} - ${erroMsg}). Tentando reconectar em 5 segundos...`);
                 setTimeout(iniciar, 5000); 
             } else {
