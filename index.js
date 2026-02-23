@@ -1,7 +1,7 @@
 const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const axios = require('axios');
-const qrcode = require('qrcode-terminal'); // <-- O NOVO DESENHISTA DE QR CODE
+const qrcode = require('qrcode-terminal'); 
 
 const IP_ORACLE = "147.15.67.87"; 
 
@@ -58,10 +58,11 @@ async function iniciar() {
     console.log('--- 🚀 LIGANDO A MÁQUINA DE VENDAS DO SR. ALEX ---');
     const { state, saveCreds } = await useMultiFileAuthState('auth_alex');
     
-    // Removi a opção antiga que causava o erro
     const sock = makeWASocket({ 
         auth: state, 
-        logger: pino({ level: 'silent' }) 
+        logger: pino({ level: 'silent' }),
+        browser: ['Mac OS', 'Chrome', '10.0.0'], // <-- O CRACHÁ DE IDENTIFICAÇÃO AQUI
+        syncFullHistory: false
     });
     
     sock.ev.on('creds.update', saveCreds);
@@ -69,21 +70,22 @@ async function iniciar() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // AQUI ESTÁ A MÁGICA: Ele desenha o QR Code manualmente!
         if (qr) {
+            console.log('\n⚠️ ESCANEIE O QR CODE ACIMA COM O SEU WHATSAPP:');
             qrcode.generate(qr, { small: true });
-            console.log('\n⚠️ ESCANEIE O QR CODE ACIMA COM O SEU WHATSAPP');
         }
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const erroMsg = lastDisconnect?.error?.message || "Erro desconhecido";
             const shouldReconnect = statusCode !== 401;
             
             if(shouldReconnect) {
-                console.log(`🔄 Conexão caiu. Tentando reconectar em 3 segundos...`);
-                setTimeout(iniciar, 3000); 
+                // AGORA ELE VAI NOS DIZER O MOTIVO EXATO DA QUEDA:
+                console.log(`🔄 Conexão caiu (Erro: ${statusCode} - ${erroMsg}). Tentando reconectar em 5 segundos...`);
+                setTimeout(iniciar, 5000); 
             } else {
-                console.log('❌ Sessão inválida (WhatsApp desconectado). Apague a pasta auth_alex e rode novamente.');
+                console.log('❌ Sessão inválida (Você desconectou no celular). Apague a pasta auth_alex e rode novamente.');
             }
         } else if (connection === 'open') {
             console.log('✅ WhatsApp conectado com SUCESSO! Robô pronto para vender.');
