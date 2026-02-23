@@ -1,2 +1,2 @@
-# bot-aurora-coinzz.
-Robô de vendas Aurora Pink - Alex
+# bot-vendas
+Robô de vendas - Alex
