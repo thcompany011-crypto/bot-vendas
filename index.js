@@ -2,6 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState, delay, fetchLatestBaileysV
 const pino = require('pino');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal'); 
+const fs = require('fs'); // ADICIONADO: Necessário para carregar as fotos dos produtos
 
 const IP_ORACLE = "147.15.67.87"; 
 
@@ -58,15 +59,14 @@ async function iniciar() {
     console.log('--- 🚀 LIGANDO A MÁQUINA DE VENDAS DO SR. ALEX ---');
     const { state, saveCreds } = await useMultiFileAuthState('auth_alex');
     
-    // O RADAR: Busca a versão mais recente do WhatsApp para não ser bloqueado
     const { version, isLatest } = await fetchLatestBaileysVersion();
     console.log(`📡 Usando a versão mais recente do WhatsApp Web: v${version.join('.')}`);
 
     const sock = makeWASocket({ 
-        version, // Informa a versão correta
+        version, 
         auth: state, 
         logger: pino({ level: 'silent' }),
-        browser: Browsers.macOS('Desktop'), // Crachá oficial
+        browser: Browsers.macOS('Desktop'), 
         syncFullHistory: false
     });
     
@@ -125,11 +125,31 @@ async function iniciar() {
             return;
         }
 
+        // --- ALTERAÇÃO: PASSO 0 COM ENVIO DE IMAGEM ---
         if (cliente.passo === 0) {
+            // Simula que está digitando/carregando a imagem
+            await sock.presenceSubscribe(from);
+            await sock.sendPresenceUpdate('composing', from);
+            await delay(1500);
+            await sock.sendPresenceUpdate('paused', from);
+
             if (cliente.produtoKey === 'serum') {
-                await enviarTextoHumano(sock, from, "Olá, bom dia! ☀️\n\nSou o Alex, já vou te explicar tudo sobre o nosso segredinho do rejuvenescimento. Pode me dizer o seu nome?");
+                const textoSerum = "Olá, bom dia! ☀️\n\nSou o Alex, já vou te explicar tudo sobre o nosso segredinho do rejuvenescimento com o *Sérum Nova Beauty*. Pode me dizer o seu nome?";
+                
+                // Verifica se a foto existe para não quebrar o robô
+                if (fs.existsSync('./foto_serum.jpg')) {
+                    await sock.sendMessage(from, { image: { url: './foto_serum.jpg' }, caption: textoSerum });
+                } else {
+                    await enviarTextoHumano(sock, from, textoSerum); // Fallback se não tiver foto
+                }
             } else {
-                await enviarTextoHumano(sock, from, "Olá! Aqui é o Alex, especialista no clareamento e uniformização da pele com o Aurora Pink 🌸. Pode me dizer o seu nome?");
+                const textoAurora = "Olá! ✨ Aqui é o Alex, especialista no clareamento e uniformização da pele com a *Aurora Pink*. Pode me dizer o seu nome?";
+                
+                if (fs.existsSync('./foto_aurora.jpg')) {
+                    await sock.sendMessage(from, { image: { url: './foto_aurora.jpg' }, caption: textoAurora });
+                } else {
+                    await enviarTextoHumano(sock, from, textoAurora);
+                }
             }
             cliente.passo = 1;
             return;
