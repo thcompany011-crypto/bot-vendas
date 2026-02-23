@@ -2,9 +2,10 @@ const { default: makeWASocket, useMultiFileAuthState, delay, fetchLatestBaileysV
 const pino = require('pino');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal'); 
-const fs = require('fs'); // ADICIONADO: Necessário para carregar as fotos dos produtos
+const fs = require('fs');
 
 const IP_ORACLE = "147.15.67.87"; 
+const ARQUIVO_SESSOES = './sessoes.json';
 
 const PRODUTOS = {
     aurora: { 
@@ -19,7 +20,45 @@ const PRODUTOS = {
     }
 };
 
-const sessoes = {}; 
+// --- MEMÓRIA PERMANENTE ---
+let sessoes = {};
+if (fs.existsSync(ARQUIVO_SESSOES)) {
+    sessoes = JSON.parse(fs.readFileSync(ARQUIVO_SESSOES, 'utf-8'));
+}
+function salvarSessoes() {
+    fs.writeFileSync(ARQUIVO_SESSOES, JSON.stringify(sessoes, null, 2));
+}
+
+// --- FOLLOW-UP (DESPERTADORES) ---
+const cronometros = {};
+
+function iniciarFollowUp(sock, to, passo, produtoKey) {
+    if (cronometros[to]) clearTimeout(cronometros[to]); // Limpa o antigo
+    
+    // Configurado para 30 minutos (30 * 60 * 1000)
+    cronometros[to] = setTimeout(async () => {
+        if (sessoes[to] && !sessoes[to].pausado) {
+            let msgFollowUp = "";
+            if (passo === 1) msgFollowUp = "Oi! Conseguiu ver minha mensagem acima? Me conta rapidinho, o que mais está te incomodando hoje para eu conseguir te ajudar? 🥰";
+            if (passo === 2) msgFollowUp = "Oi! Estou fechando a rota de entregas do motoboy para hoje. Me manda seu *CEP* (só números) pra eu ver se consigo colocar o seu na rota de Frete Grátis?";
+            if (passo === 3) msgFollowUp = "Seu pedido já está quase pré-aprovado aqui com Frete Grátis! Só falta me confirmar o seu *CPF* e o *Número da casa* para eu liberar sua reserva. Consegue me mandar agora?";
+            
+            if (msgFollowUp !== "") {
+                await enviarTextoHumano(sock, to, msgFollowUp);
+                sessoes[to].pausado = true; // Trava Anti-Spam (só cobra 1 vez)
+                salvarSessoes();
+            }
+        }
+    }, 30 * 60 * 1000); // 30 Minutos
+}
+
+// --- RELÓGIO INTELIGENTE ---
+function getSaudacao() {
+    const hora = new Date().getHours();
+    if (hora >= 5 && hora < 12) return "bom dia ☀️";
+    if (hora >= 12 && hora < 18) return "boa tarde 🌤️";
+    return "boa noite 🌙";
+}
 
 async function enviarTextoHumano(sock, to, text) {
     await sock.presenceSubscribe(to);
@@ -31,37 +70,11 @@ async function enviarTextoHumano(sock, to, text) {
     await sock.sendMessage(to, { text: text });
 }
 
-function responderFAQ(texto, produto) {
-    const t = texto.toLowerCase();
-    
-    if (t.includes('tempo leva') || t.includes('demora') || t.includes('prazo')) return "🚚 O prazo médio é de apenas *1 dia útil*, entregamos de segunda a sábado (8h às 18h) dependendo da rota.";
-    if (t.includes('forma de pagamento') || t.includes('como pagar')) return "💳 Aceitamos Pix, Dinheiro, Cartão de Crédito ou Débito. E o melhor: você pode pagar na entrega!";
-    if (t.includes('grávida') || t.includes('lactante') || t.includes('amamentando')) return "🤰 Pode sim, mas como é um momento especial, o ideal é sempre confirmar com o seu médico antes, tá bem?";
-    
-    if (produto === 'serum') {
-        if (t.includes('o que é') || t.includes('para que serve')) return "✨ É um sérum facial anti-idade com alta tecnologia. Combate rugas, linhas finas, flacidez e manchas!";
-        if (t.includes('como usar') || t.includes('passar')) return "💧 *Como usar?* Aplique com a pele limpa, de preferência à noite, espalhando suavemente pelo rosto. Não precisa enxaguar!";
-        if (t.includes('anvisa')) return "✅ *É aprovado pela ANVISA?* Sim! O sérum é 100% regularizado.";
-        if (t.includes('funciona') || t.includes('resultado') || t.includes('quanto tempo')) return "⏳ Algumas clientes já percebem melhora em 7 a 15 dias! Mas o ideal são 30 a 60 dias para resultados profundos.";
-    }
-    
-    if (produto === 'aurora') {
-        if (t.includes('o que é') || t.includes('para que serve')) return "🌸 O Aurora Pink é um creme clareador com toque aveludado. Ele clareia manchas escuras, combate a foliculite e hidrata profundamente!";
-        if (t.includes('como usar') || t.includes('passar')) return "🧴 Aplique sobre a pele limpa e seca, massageando suavemente até absorver. O ideal é usar 2 vezes ao dia (manhã e noite)!";
-        if (t.includes('tem ácido') || t.includes('irrita')) return "✨ O Aurora NÃO contém ácidos agressivos. Ele pode ser usado nas áreas mais sensíveis sem irritar a pele.";
-        if (t.includes('pote') || t.includes('quantidade')) return "📦 Ao contrário dos creminhos de farmácia, o nosso pote é grande e vem com 150g, então ele rende e dura muito!";
-        if (t.includes('garantia')) return "💎 Sim! Temos uma Garantia de Satisfação de 30 dias. Se não notar melhora, devolvemos o seu dinheiro.";
-    }
-    return null;
-}
-
 async function iniciar() {
-    console.log('--- 🚀 LIGANDO A MÁQUINA DE VENDAS DO SR. ALEX ---');
+    console.log('--- 🚀 MÁQUINA DE VENDAS DO SR. ALEX LIGADA ---');
     const { state, saveCreds } = await useMultiFileAuthState('auth_alex');
+    const { version } = await fetchLatestBaileysVersion();
     
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`📡 Usando a versão mais recente do WhatsApp Web: v${version.join('.')}`);
-
     const sock = makeWASocket({ 
         version, 
         auth: state, 
@@ -74,140 +87,159 @@ async function iniciar() {
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('\n⚠️ ESCANEIE O QR CODE ACIMA COM O SEU WHATSAPP:');
-            qrcode.generate(qr, { small: true });
-        }
-
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const erroMsg = lastDisconnect?.error?.message || "Erro desconhecido";
-            const shouldReconnect = statusCode !== 401;
-            
-            if(shouldReconnect) {
-                console.log(`🔄 Conexão caiu (Erro: ${statusCode} - ${erroMsg}). Tentando reconectar em 5 segundos...`);
-                setTimeout(iniciar, 5000); 
-            } else {
-                console.log('❌ Sessão inválida (Você desconectou no celular). Apague a pasta auth_alex e rode novamente.');
-            }
-        } else if (connection === 'open') {
-            console.log('✅ WhatsApp conectado com SUCESSO! Robô pronto para vender.');
+        if (qr) qrcode.generate(qr, { small: true });
+        if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== 401) {
+            setTimeout(iniciar, 5000); 
         }
     });
 
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        if (!msg.message) return;
+        
         const from = msg.key.remoteJid;
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "");
         const textoLow = texto.toLowerCase();
-        
-        if (!sessoes[from]) sessoes[from] = { passo: 0 };
-        const cliente = sessoes[from];
 
-        if (!cliente.produtoKey) {
-            if (textoLow.includes("aurora") || textoLow.includes("pink")) {
-                cliente.produtoKey = 'aurora';
-            } else if (textoLow.includes("serum") || textoLow.includes("nova") || textoLow.includes("beauty")) {
-                cliente.produtoKey = 'serum';
+        // --- MODO HUMANO (SENSOR DO CHEFE) ---
+        if (msg.key.fromMe) {
+            if (texto.trim() === '#robo') {
+                if (sessoes[from]) {
+                    sessoes[from].pausado = false;
+                    salvarSessoes();
+                    await sock.sendMessage(from, { text: "🤖 *Robô reativado para este cliente. Aguardando a próxima mensagem dela...*" });
+                }
             } else {
-                cliente.produtoKey = 'serum'; 
+                if (sessoes[from] && !sessoes[from].pausado) {
+                    sessoes[from].pausado = true; // Desliga o robô se o Alex falar
+                    if (cronometros[from]) clearTimeout(cronometros[from]); // Cancela o follow-up
+                    salvarSessoes();
+                }
             }
-        }
-        const produtoEscolhido = PRODUTOS[cliente.produtoKey];
-
-        const respostaFAQ = responderFAQ(texto, cliente.produtoKey);
-        if (respostaFAQ) {
-            await enviarTextoHumano(sock, from, respostaFAQ);
-            if (cliente.passo === 2) await enviarTextoHumano(sock, from, "Para eu verificar se a oferta está disponível com Frete Grátis, me informe o seu CEP (apenas números), por favor?");
-            if (cliente.passo === 4) await enviarTextoHumano(sock, from, "Para finalizar sua reserva, me mande numa única mensagem: Nome, CPF e Número da casa.");
             return;
         }
 
-        // --- ALTERAÇÃO: PASSO 0 COM ENVIO DE IMAGEM ---
+        // Se o cliente mandar algo, cria a ficha
+        if (!sessoes[from]) sessoes[from] = { passo: 0, pausado: false };
+        const cliente = sessoes[from];
+
+        // Ignora mensagens se o robô estiver pausado (Modo Humano ativado)
+        if (cliente.pausado) return;
+
+        // Limpa o despertador se o cliente respondeu
+        if (cronometros[from]) clearTimeout(cronometros[from]);
+
+        // --- FILTRO DE CURIOSOS (MENSAGEM GENÉRICA DO FB) ---
+        if (!cliente.produtoKey) {
+            if (textoLow.includes("aurora") || textoLow.includes("pink") || textoLow.includes("mancha") || textoLow.includes("pele de seda")) {
+                cliente.produtoKey = 'aurora';
+            } else if (textoLow.includes("serum") || textoLow.includes("nova") || textoLow.includes("beauty") || textoLow.includes("rejuvenesce")) {
+                cliente.produtoKey = 'serum';
+            } else {
+                // Mensagem não tem o produto (Passo -1)
+                cliente.passo = -1; 
+                await enviarTextoHumano(sock, from, `Olá, ${getSaudacao()}! Sou o Alex. Vi que veio do nosso anúncio.\n\nPara eu te passar as informações corretas, você gostaria de saber sobre o clareador *Aurora Pink* ou sobre o *Sérum Nova Beauty*?`);
+                salvarSessoes();
+                return;
+            }
+        }
+
+        // Cliente respondeu ao filtro genérico
+        if (cliente.passo === -1) {
+            if (textoLow.includes("aurora") || textoLow.includes("pink") || textoLow.includes("clareador")) {
+                cliente.produtoKey = 'aurora';
+                cliente.passo = 0;
+            } else if (textoLow.includes("serum") || textoLow.includes("nova") || textoLow.includes("beauty")) {
+                cliente.produtoKey = 'serum';
+                cliente.passo = 0;
+            } else {
+                await enviarTextoHumano(sock, from, "Por favor, digite *'Aurora'* ou *'Sérum'* para eu te passar as informações corretas! 👇");
+                return;
+            }
+        }
+
+        const produtoEscolhido = PRODUTOS[cliente.produtoKey];
+
+        // --- PASSO 0: SAUDAÇÃO INTELIGENTE + FOTO ---
         if (cliente.passo === 0) {
-            // Simula que está digitando/carregando a imagem
             await sock.presenceSubscribe(from);
             await sock.sendPresenceUpdate('composing', from);
             await delay(1500);
             await sock.sendPresenceUpdate('paused', from);
 
+            const saudacaoTempo = getSaudacao();
+
             if (cliente.produtoKey === 'serum') {
-                const textoSerum = "Olá, bom dia! ☀️\n\nSou o Alex, já vou te explicar tudo sobre o nosso segredinho do rejuvenescimento com o *Sérum Nova Beauty*. Pode me dizer o seu nome?";
-                
-                // Verifica se a foto existe para não quebrar o robô
-                if (fs.existsSync('./foto_serum.jpg')) {
-                    await sock.sendMessage(from, { image: { url: './foto_serum.jpg' }, caption: textoSerum });
-                } else {
-                    await enviarTextoHumano(sock, from, textoSerum); // Fallback se não tiver foto
-                }
+                const textoSerum = `Olá, ${saudacaoTempo}!\nSou o Alex. Vou te mostrar como o *Sérum Nova Beauty* vai transformar seu rosto e devolver aquele brilho de juventude.\n\nComo você se chama?`;
+                if (fs.existsSync('./foto_serum.jpg')) await sock.sendMessage(from, { image: { url: './foto_serum.jpg' }, caption: textoSerum });
+                else await enviarTextoHumano(sock, from, textoSerum);
             } else {
-                const textoAurora = "Olá! ✨ Aqui é o Alex, especialista no clareamento e uniformização da pele com a *Aurora Pink*. Pode me dizer o seu nome?";
-                
-                if (fs.existsSync('./foto_aurora.jpg')) {
-                    await sock.sendMessage(from, { image: { url: './foto_aurora.jpg' }, caption: textoAurora });
-                } else {
-                    await enviarTextoHumano(sock, from, textoAurora);
-                }
+                const textoAurora = `Olá, ${saudacaoTempo}! ✨\nSou o Alex. Já vou te explicar como a *Aurora Pink* vai deixar sua pele impecável e livre de manchas.\n\nComo você se chama?`;
+                if (fs.existsSync('./foto_aurora.jpg')) await sock.sendMessage(from, { image: { url: './foto_aurora.jpg' }, caption: textoAurora });
+                else await enviarTextoHumano(sock, from, textoAurora);
             }
+            
             cliente.passo = 1;
+            salvarSessoes();
+            iniciarFollowUp(sock, from, 1, cliente.produtoKey);
             return;
         }
 
+        // --- PASSO 1: DORES E IDADE ---
         if (cliente.passo === 1) {
             cliente.nomeCliente = texto.split(' ')[0]; 
             if (cliente.produtoKey === 'serum') {
-                await enviarTextoHumano(sock, from, `Oi ${cliente.nomeCliente}, tudo bem? Antes de explicar o tratamento, deixa eu te falar algo importante...\n\nA maioria das mulheres que me chamam tá cansada de usar um monte de produto e não ver diferença, sabe?\n\nMe diz: *qual sua idade e o que mais tá te incomodando hoje?* Rugas, manchas, flacidez... ou tudo junto?`);
+                await enviarTextoHumano(sock, from, `Prazer, *${cliente.nomeCliente}*! 😊\n\nA maioria das mulheres que me chamam tá cansada de usar um monte de produto e não ver diferença, sabe?\n\nMe diz: *qual sua idade e o que mais tá te incomodando hoje?* Rugas, manchas, flacidez... ou tudo junto?`);
             } else {
-                await enviarTextoHumano(sock, from, `Oi ${cliente.nomeCliente}! Pra eu te indicar o tratamento ideal, me conta: O que mais te incomoda hoje? Manchas na virilha, axilas ou foliculite?`);
+                await enviarTextoHumano(sock, from, `Que nome lindo, *${cliente.nomeCliente}*! 😍\n\nPra eu te indicar o tratamento ideal, me conta: O que mais te incomoda hoje? Manchas na virilha, axilas ou foliculite?`);
             }
             cliente.passo = 2;
+            salvarSessoes();
+            iniciarFollowUp(sock, from, 2, cliente.produtoKey);
             return;
         }
 
+        // --- PASSO 2: OFERTA E CEP ---
         if (cliente.passo === 2) {
+            cliente.idade = texto;
             if (cliente.produtoKey === 'serum') {
-                await enviarTextoHumano(sock, from, `Entendo perfeitamente, ${cliente.nomeCliente}. É por isso que o Sérum Nova Beauty é diferente. Ele tem 5 ativos poderosos: Ácido hialurônico, Vitamina E, Óleo de semente de uva, Aloe vera e D-Pantenol.\n\nEle apaga o "bigodinho chinês", clareia manchas e tem aprovação da Anvisa!\n\nHoje estamos com a promoção especial: *Pague 2 leve 3 por apenas R$ 297,00*.\n\nPara eu verificar se essa oferta está disponível com **Frete Grátis** para a sua cidade, me informe o seu *CEP* (apenas números), por favor?`);
+                await enviarTextoHumano(sock, from, `Entendo perfeitamente, ${cliente.nomeCliente}. É por isso que o Sérum Nova Beauty é diferente. Ele apaga o "bigodinho chinês", clareia manchas e tem aprovação da Anvisa!\n\nHoje estamos com a promoção especial de 3 potes por apenas R$ 297,00.\n\nAgora me informe seu *CEP* (apenas números) para eu verificar se temos entrega rápida com motoboy na sua rua?`);
             } else {
-                await enviarTextoHumano(sock, from, `Entendo perfeitamente, ${cliente.nomeCliente}. Isso é super comum, principalmente por causa do atrito ou da depilação. O Aurora Pink foi feito justamente pra isso!\n\nDiferente dos cremes pequenos de farmácia, ele vem com 150g (dura muito!) e não contém ácidos agressivos, podendo ser usado nas áreas mais sensíveis.\n\nHoje estamos com o nosso kit promocional de 5 unidades por apenas R$ 297,00.\n\n📍 Me conta, qual o seu **CEP** (apenas números) pra eu verificar o prazo e se temos Frete Grátis pra sua casa?`);
+                await enviarTextoHumano(sock, from, `Entendo perfeitamente, ${cliente.nomeCliente}. Isso é super comum por causa do atrito ou da depilação. O Aurora Pink foi feito justamente pra isso e não contém ácidos!\n\nHoje estamos com o kit promocional de 5 unidades por apenas R$ 297,00.\n\n📍 Me conta, qual o seu *CEP* (apenas números) pra eu verificar o prazo e se temos Frete Grátis pra sua casa?`);
             }
             cliente.passo = 3;
+            salvarSessoes();
+            iniciarFollowUp(sock, from, 3, cliente.produtoKey);
             return;
         }
 
+        // --- PASSO 3: CONSULTA NA ORACLE ---
         if (cliente.passo === 3 && texto.match(/\d{5}-?\d{3}/)) {
             cliente.cep = texto.replace(/\D/g, '');
             cliente.whatsapp = from.split('@')[0]; 
-            await enviarTextoHumano(sock, from, `🔍 Verificando logística do ${produtoEscolhido.nome} na sua região...`);
+            await enviarTextoHumano(sock, from, `🔍 Verificando a logística na sua região, só um instante...`);
 
             try {
                 const res = await axios.post(`http://${IP_ORACLE}:3000/sondagem`, { cep: cliente.cep, link: produtoEscolhido.logzz });
                 
                 if (res.data.atende) {
                     cliente.tipo = 'LOGZZ';
-                    if (cliente.produtoKey === 'aurora') {
-                        await enviarTextoHumano(sock, from, `Maravilha! Hoje mesmo fiz um envio para sua cidade, fico feliz que as meninas aí estão gostando! Temos **entregador próprio** pra sua região, então o envio é imediato e você só paga os R$ 297,00 quando o produto chegar na sua casa!`);
-                    } else {
-                        await enviarTextoHumano(sock, from, "✅ Excelente! Temos **entregador próprio** para sua rua. Você só paga R$ 297,00 quando receber em mãos!");
-                    }
+                    await enviarTextoHumano(sock, from, `✅ *Ótima notícia!*\nTemos pronta entrega para sua região com frete grátis e você paga os R$ 297,00 apenas no ato da entrega!`);
                 } else {
                     cliente.tipo = 'COINZZ';
-                    if (cliente.produtoKey === 'aurora') {
-                        await enviarTextoHumano(sock, from, `Ooi ${cliente.nomeCliente}, acabei de confirmar e a sua região é atendida exclusivamente pelos Correios (pagamento antecipado de R$ 297,00).\n\nMas olha, pra fidelizar você como minha cliente, se você fechar hoje eu vou te dar **50% de desconto na sua próxima compra** por confiar em mim! O que acha?`);
-                    } else {
-                        await enviarTextoHumano(sock, from, "⚠️ Sr(a), sua região é exclusiva dos Correios. O pagamento de R$ 297,00 é Antecipado com Frete Grátis!");
-                    }
+                    await enviarTextoHumano(sock, from, `📦 *Atenção:*\nPara sua região, o envio é feito via Correios. O pagamento de R$ 297,00 é antecipado (Pix ou Cartão) e o frete também é grátis!`);
                 }
                 
-                await enviarTextoHumano(sock, from, "Para eu registrar o seu pedido agora, por favor, me envie em **UMA ÚNICA MENSAGEM**:\n\n👤 Nome Completo\n💳 CPF (apenas números)\n🏠 Número da casa (e complemento)");
+                await enviarTextoHumano(sock, from, "Para eu gerar o seu pedido agora mesmo no sistema, me mande numa **ÚNICA MENSAGEM**:\n\n👤 Nome Completo\n💳 CPF (apenas números)\n🏠 Número da casa");
                 cliente.passo = 4; 
+                salvarSessoes();
             } catch (e) { 
-                await enviarTextoHumano(sock, from, "Ocorreu um erro na verificação do CEP. Pode enviar novamente?"); 
+                await enviarTextoHumano(sock, from, "Ops, ocorreu um erro na verificação do CEP. Pode enviar novamente?"); 
             }
             return;
         }
 
+        // --- PASSO 4: FINALIZAR VENDA ---
         if (cliente.passo === 4) {
             const cpfMatch = texto.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/) || texto.match(/\d{11}/);
             if (!cpfMatch) {
@@ -220,23 +252,24 @@ async function iniciar() {
             cliente.nome = partes[0].replace(/nome:|1\.|👤/gi, '').trim() || "Cliente";
             cliente.numero = partes[1] ? partes[1].replace(/n[úu]mero:|casa|complemento:|3\.|🏠/gi, '').trim() : "SN";
 
-            await enviarTextoHumano(sock, from, "⏳ Perfeito! Processando o seu pedido oficial no sistema... Só um instante.");
+            await enviarTextoHumano(sock, from, "Recebido com sucesso! 🎯\nEstou gerando seu pedido agora mesmo no sistema. Em instantes você receberá a confirmação.");
 
             if (cliente.tipo === 'LOGZZ') {
                 try {
                     await axios.post(`http://${IP_ORACLE}:3000/agendar-logzz`, { cliente, link: produtoEscolhido.logzz });
-                    await enviarTextoHumano(sock, from, "🎉 **PEDIDO AGENDADO COM SUCESSO!**\nSua entrega foi confirmada. Lembre-se, você só pagará R$ 297,00 ao entregador.");
+                    await enviarTextoHumano(sock, from, "🎉 **PEDIDO AGENDADO COM SUCESSO!**\nSua entrega foi confirmada. O entregador entrará em contato quando estiver a caminho.");
                 } catch (e) { await enviarTextoHumano(sock, from, "Acesse o link oficial para concluir: " + produtoEscolhido.logzz); }
             } else {
                 try {
                     const res = await axios.post(`http://${IP_ORACLE}:3000/gerar-pix-coinzz`, { cliente, link: produtoEscolhido.coinzz }, { timeout: 45000 });
                     if (res.data.pix) {
-                        await enviarTextoHumano(sock, from, "✅ **RESERVA CONCLUÍDA!**\nCopie o código PIX abaixo para garantir a sua oferta:");
+                        await enviarTextoHumano(sock, from, "✅ **RESERVA CONCLUÍDA!**\nCopie o código PIX abaixo para garantir a sua promoção:");
                         await sock.sendMessage(from, { text: res.data.pix });
                     } else { throw new Error('Pix não extraído'); }
                 } catch (e) { await enviarTextoHumano(sock, from, "Aqui está o link oficial da sua reserva: " + produtoEscolhido.coinzz); }
             }
-            delete sessoes[from];
+            cliente.pausado = true; // Desliga o robô após a venda ser concluída
+            salvarSessoes();
         }
     });
 }
