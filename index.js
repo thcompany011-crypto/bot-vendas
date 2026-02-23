@@ -1,6 +1,7 @@
 const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const axios = require('axios');
+const qrcode = require('qrcode-terminal'); // <-- O NOVO DESENHISTA DE QR CODE
 
 const IP_ORACLE = "147.15.67.87"; 
 
@@ -57,24 +58,28 @@ async function iniciar() {
     console.log('--- 🚀 LIGANDO A MÁQUINA DE VENDAS DO SR. ALEX ---');
     const { state, saveCreds } = await useMultiFileAuthState('auth_alex');
     
-    // AQUI ESTÁ A CORREÇÃO DO QR CODE:
+    // Removi a opção antiga que causava o erro
     const sock = makeWASocket({ 
         auth: state, 
-        printQRInTerminal: true, 
         logger: pino({ level: 'silent' }) 
     });
     
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
         
+        // AQUI ESTÁ A MÁGICA: Ele desenha o QR Code manualmente!
+        if (qr) {
+            qrcode.generate(qr, { small: true });
+            console.log('\n⚠️ ESCANEIE O QR CODE ACIMA COM O SEU WHATSAPP');
+        }
+
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== 401;
             
             if(shouldReconnect) {
-                // AQUI ESTÁ A CORREÇÃO DO FREIO (3 SEGUNDOS):
                 console.log(`🔄 Conexão caiu. Tentando reconectar em 3 segundos...`);
                 setTimeout(iniciar, 3000); 
             } else {
