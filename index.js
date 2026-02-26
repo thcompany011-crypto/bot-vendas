@@ -14,7 +14,7 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(reason);
 });
 
-const IP_ORACLE = "147.15.67.87"; 
+const IP_ORACLE = "127.0.0.1";
 const ARQUIVO_SESSOES = './sessoes.json';
 
 // --- CONFIGURAÇÃO DE PRODUTOS E COPY ---
