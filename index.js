@@ -115,14 +115,16 @@ async function iniciar() {
         const texto = (msg.message.conversation || msg.message.extendedTextMessage?.text || "");
         const textoLow = texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+                // --- MODO HUMANO INTELIGENTE ---
         if (msg.key.fromMe) {
             if (texto.trim() === '#robo') {
                 if (sessoes[from]) { sessoes[from].pausado = false; salvarSessoes(); await sock.sendMessage(from, { text: "🤖 *Robô reativado!*" }); }
-            } else {
-                if (sessoes[from] && !sessoes[from].pausado) { sessoes[from].pausado = true; if (cronometros[from]) clearTimeout(cronometros[from]); salvarSessoes(); }
+            } else if (texto.trim() === '#pausa') {
+                if (sessoes[from]) { sessoes[from].pausado = true; if (cronometros[from]) clearTimeout(cronometros[from]); salvarSessoes(); await sock.sendMessage(from, { text: "⏸️ *Robô pausado pelo chefe.*" }); }
             }
-            return;
+            return; // Ignora as mensagens automáticas do próprio robô
         }
+
 
         if (!sessoes[from]) sessoes[from] = { passo: 0, pausado: false };
         const cliente = sessoes[from];
